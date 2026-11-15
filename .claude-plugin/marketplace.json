@@ -1,10 +1,35 @@
 {
   "name": "claude-mods",
+  "description": "Claude Code mods: tool and connector switches, a prompt-cache meter, a usage bar, and looks for the desktop app",
   "owner": { "name": "Bryan Villafuerte" },
   "plugins": [
-    { "name": "tool-toggle", "source": "./plugins/tool-toggle" },
-    { "name": "cache-control", "source": "./plugins/cache-control" },
-    { "name": "nebula", "source": "./plugins/nebula" },
-    { "name": "usage-bar", "source": "./plugins/usage-bar" }
+    {
+      "name": "tool-toggle",
+      "source": "./mods/tool-toggle",
+      "description": "Turn connectors, MCP servers, single tools and skills on and off",
+      "category": "productivity",
+      "keywords": ["mod", "tools", "mcp", "connectors", "skills"]
+    },
+    {
+      "name": "cache-control",
+      "source": "./mods/cache-control",
+      "description": "Prompt-cache meter with cold-send cost, confirmation and keep-warm",
+      "category": "productivity",
+      "keywords": ["mod", "prompt-caching", "cost"]
+    },
+    {
+      "name": "usage-bar",
+      "source": "./mods/usage-bar",
+      "description": "Plan usage windows with pace and a daily budget",
+      "category": "productivity",
+      "keywords": ["mod", "usage", "rate-limits"]
+    },
+    {
+      "name": "nebula",
+      "source": "./themes/nebula",
+      "description": "A soft space look for the desktop app, light and dark",
+      "category": "theme",
+      "keywords": ["theme", "look", "space"]
+    }
   ]
 }

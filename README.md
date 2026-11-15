@@ -1,83 +1,224 @@
 # claude-mods
 
-Mods for Claude Code: a switchboard for tools, connectors and skills, a prompt-cache meter, a usage bar, and a look.
+Mods and themes for [Claude Code](https://code.claude.com). The mods add features: switch tools, connectors and skills on and off, watch the prompt cache, and pace your plan's usage limits. The themes change how the desktop app looks.
 
-| Mod | What it does | Command |
-| --- | --- | --- |
-| [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers, single tools and skills on and off from a pane | `/tools` |
-| [cache-control](plugins/cache-control) | Prompt-cache meter with a countdown, cold-send cost, a confirmation before expensive cold sends, and keep-warm pings | `/cache` |
-| [nebula](plugins/nebula) | Nebula: a soft space look for light and dark, with a band of lilac and rose nebula gas and clean stars | `/nebula` |
-| [usage-bar](plugins/usage-bar) | Your plan usage (5-hour, weekly, model windows) above the prompt, with the pace and a daily budget per window | `/limits` |
+- [What's inside](#whats-inside)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Update and uninstall](#update-and-uninstall)
+- [Where each one works](#where-each-one-works)
+- [Mods](#mods): [tool-toggle](#tool-toggle) · [cache-control](#cache-control) · [usage-bar](#usage-bar)
+- [Themes](#themes): [nebula](#nebula)
+- [Development](#development)
+- [License](#license)
+
+## What's inside
+
+| | Name | What it does | Command |
+| --- | --- | --- | --- |
+| Mod | [tool-toggle](mods/tool-toggle) | Turn connectors, MCP servers, single tools and skills on and off | `/tools` |
+| Mod | [cache-control](mods/cache-control) | Prompt-cache meter, cold-send cost, a confirmation before an expensive cold send, keep-warm | `/cache` |
+| Mod | [usage-bar](mods/usage-bar) | Your 5-hour, weekly and model usage windows, with pace and a daily budget | `/limits` |
+| Theme | [nebula](themes/nebula) | A soft space look for light and dark, with a nebula behind the conversation | `/nebula` |
+
+Mods live in [`mods/`](mods) and themes in [`themes/`](themes). Install only what you want: each one is its own plugin.
+
+## Requirements
+
+- **Claude Code 2.1.325 or newer.** Check with `claude --version`, or `/status` in the desktop app's Code tab.
+- **For themes, a recent Claude desktop app.** If a theme says nothing draws it, update the app and restart it.
+- **Access to this repository.** It's private: you need to be invited, with GitHub set up on your machine (`gh auth login`, or an SSH key).
 
 ## Install
 
-At the prompt of a terminal session:
+### From the terminal
+
+Add the marketplace once:
+
+```bash
+claude plugin marketplace add sthbryan/claude-mods
+```
+
+Then install what you want:
+
+```bash
+claude plugin install tool-toggle@claude-mods
+```
+
+```bash
+claude plugin install cache-control@claude-mods
+```
+
+```bash
+claude plugin install usage-bar@claude-mods
+```
+
+```bash
+claude plugin install nebula@claude-mods
+```
+
+### From inside a session
+
+At the prompt, the same in one line each (answer `y` to add the marketplace, then pick a scope):
 
 ```
 /plugin install tool-toggle --marketplace sthbryan/claude-mods
 /plugin install cache-control --marketplace sthbryan/claude-mods
-/plugin install nebula --marketplace sthbryan/claude-mods
 /plugin install usage-bar --marketplace sthbryan/claude-mods
+/plugin install nebula --marketplace sthbryan/claude-mods
 ```
 
-Answer `y` to add the marketplace, then pick a scope. From a shell, use `claude plugin install <mod> --marketplace sthbryan/claude-mods`.
+### In the desktop app
 
-In the desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `sthbryan/claude-mods`, then **Add plugin**.
+Click **+** next to the prompt box, then **Plugins** › **Add marketplace** with `sthbryan/claude-mods`, then **Add plugin** for each one.
 
-The repository is private, so installing needs GitHub access to it on your computer.
+New installs load in the next session. A theme applies when a new session starts in the Code tab.
 
-## tool-toggle
+## Update and uninstall
 
-`/tools` opens a pane with every connector, MCP server and tool in the session, grouped and searchable.
+Plugins update by version: pull the marketplace, then update each plugin.
 
-- **Connectors** (claude.ai) are switched for real, the same switch as + › Connectors, so their tools leave the model's list. The change applies when the turn ends.
-- **Other servers and single tools** are blocked: the model still sees them, but a call is denied with a reason.
-- From the prompt: `/tools off gmail`, `/tools on slack`, `/tools list`.
+```bash
+claude plugin marketplace update claude-mods
+```
 
-- **Skills:** a skill turned off leaves the listing the model reads, its Skill tool call is denied, and running it by name gives a notice instead of its text. (Where an organization security plugin handles the listing first, the skill stays listed but still cannot run.) `/tools off commit` works for skills too (`skill:<name>` when a tool shares the name).
+```bash
+claude plugin update tool-toggle@claude-mods
+```
+
+```bash
+claude plugin uninstall nebula@claude-mods
+```
+
+`claude plugin list` shows what's installed and its version.
+
+## Where each one works
+
+| | Terminal (CLI) | Desktop app | Notes |
+| --- | --- | --- | --- |
+| tool-toggle | ✓ | ✓ | In the terminal, claude.ai connectors are blocked rather than switched off: their tools stay listed but can't run. |
+| cache-control | ✓ | ✓ | Bars are drawn in characters in the terminal (`━━━━━━━━━`). |
+| usage-bar | ✓ | ✓ | Same. Needs a Claude subscription: an API key reports no windows. |
+| nebula | — | ✓ | Themes are drawn by the desktop and mobile apps only. |
+
+The mobile app and VS Code haven't been tested.
+
+## Mods
+
+### tool-toggle
+
+`/tools` opens a pane with everything the session can use, in sections: **Connectors**, **MCP servers**, **App servers**, **Built-in tools** and **Skills**, with a search box.
+
+- **Connectors** (claude.ai) are switched for real in the desktop app, the same switch as **+** › **Connectors**, so their tools leave the model's list. The change applies when the turn ends.
+- **MCP servers and single tools** are blocked: the model still sees them, but a call is denied with a reason it can act on.
+- **Skills** turned off are denied at the Skill tool and give a notice when run by name. Where an organization's security plugin handles the skill listing first, the skill stays listed but still can't run.
+
+From the prompt:
+
+```
+/tools                 open the pane
+/tools off gmail       a connector or server, by name
+/tools off Bash        a single tool
+/tools off commit      a skill (skill:commit when a tool shares the name)
+/tools on gmail        turn it back on
+/tools list            what's off
+```
 
 Blocks are kept across sessions.
 
-## cache-control
+### cache-control
 
-A band above the prompt shows the cache state (warm, expiring soon, cold, compacted), the hit rate, a countdown to expiry and what a cold send would cost. `/cache` opens a pane with the last request split into read / written / new tokens, the session's cost and savings, and a table per turn.
+A row above the prompt shows the cache: a slim bar of what the last request read, wrote and sent new, the hit rate, a state (**warm**, **expiring**, **missed**, **cold**, **compacted**, **not cached**), the time left, and what a cold send would cost.
 
-- **Cold-send confirmation:** with the cache expired and a context of 50k tokens or more, asks before your message goes out. `/cache guard off` turns it off.
-- **Keep warm:** `/cache warm 2h` sends a tool-less ping shortly before the cache expires while you are idle (10 min before for a 1-hour cache, 1 min for a 5-minute one). It stops by itself if the cache had already gone cold.
-- **Cache lifetime:** follows Claude Code's rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account type) and corrects itself from request timing. The `ttl` option pins it.
+`/cache` (or **Details**) opens a pane with the time left, context size, hit rate, the cost of a cold send, what the cache saved, the last request, and a table of turns.
 
-Costs are API list-price estimates; on a subscription they are an equivalent, not a charge. "Cold" is estimated from the clock, not checked with the server.
+- **Confirm cold sends.** With the cache expired and a context of 50k tokens or more, it asks before your message goes out and shows the cost. `/cache guard off` turns it off.
+- **Keep warm.** `/cache warm 2h` pings the cache shortly before it expires while you're idle (10 minutes before for a 1-hour cache, 1 minute for a 5-minute one). It stops by itself if the cache had already gone cold. `/cache warm off` stops it.
+- **Cache lifetime.** Follows Claude Code's own rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account) and corrects itself from request timing.
 
-Options: `ttl` (`auto`, `5m`, `1h`), `guardMinTokens`, `band`, `toast`.
+Costs are API list-price estimates. On a subscription they're an equivalent, not a charge. "Cold" is estimated from the clock, not checked with the server.
 
-Ideas from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-control (claude-code-templates, MIT).
+Options, set with `/plugin configure cache-control@claude-mods`:
 
-## nebula
+| Option | Default | |
+| --- | --- | --- |
+| `ttl` | `auto` | `auto`, `5m` or `1h` |
+| `guardMinTokens` | `50000` | Smallest context that asks before a cold send |
+| `band` | `true` | Show the row above the prompt |
+| `toast` | `true` | Warn shortly before a large cache expires |
 
-A look for the desktop and mobile apps, in light and dark:
+### usage-bar
 
-- **Colors:** violet-black grays (not blue) with an orchid accent; mint, amber, coral and rose keep their meaning. Built with the design system's `makeColors`.
-- **Scene:** a band of nebula gas across the right side, made of fractal noise tinted lilac, rose and a warm peach core with dark dust lanes, and clean round stars, thick along the band and sparse elsewhere. The middle stays clear; a few stars twinkle, and motion stops under reduced motion.
+A row above the prompt with each usage window your plan reports: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one. Each has a slim bar with a mark where an even pace would be now, its percentage, a state, and the time to its reset.
 
-It applies to the Code tab of the desktop app and to the mobile app, from the next session after it's installed. `/nebula off` and `/nebula on` switch it. Needs Claude Code 2.1.325 or newer.
-
-## usage-bar
-
-A row above the prompt with each usage window the API reports for your plan: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one. Each has a slim bar with a mark where an even pace would be now, its percentage, a state (under pace, on pace, over pace, well over pace, nearly full, limit reached) and the time to its reset. The terminal draws the bar as `━━━━┃━━━━`. An API key reports none, and the row stays away.
+| State | When |
+| --- | --- |
+| under pace | more than 3 points below an even pace |
+| on pace | within 3 points |
+| over pace | 3 to 15 points above |
+| well over pace | more than 15 points above |
+| nearly full | 90% or more |
+| limit reached | 100% |
 
 `/limits` (or **Details**) opens a pane with, for each window:
 
-- when it started (its reset minus its length) and when it resets;
-- where an even pace would be by now, and how far over or under you are;
+- when it started and when it resets;
+- where an even pace would be now, and how far over or under you are;
 - how much you can use **per day** (weekly windows) or **per hour** (the 5-hour window) to last until the reset;
 - what you've used today, and when you'd run out at the current pace.
 
-"Today" counts from the first reading the mod saw on your local day.
+Windows come from the latest API reply and refresh every minute. "Today" starts at the first reading on your local day.
+
+## Themes
+
+Only one theme can be active at a time: the last one set wins. Turn a theme off with its own command.
+
+### nebula
+
+A look for the desktop and mobile apps, in light and dark.
+
+- **Colors.** Violet-black grays with an orchid accent. Mint, amber, coral and rose keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so surfaces, borders and code all follow.
+- **Scene.** A band of nebula gas across the right side, made of fractal noise tinted lilac, rose and a warm peach core with dark dust lanes, and clean round stars, thick along the band and sparse elsewhere. The middle stays clear for the conversation. A few stars twinkle, and motion stops under reduced motion.
+
+`/nebula off` and `/nebula on` switch it, and the choice is kept.
 
 ## Development
 
-Each mod has tests: `claude plugin test plugins/<mod>`, and `claude plugin validate plugins/<mod>` checks it the way the engine will.
+```
+.claude-plugin/marketplace.json   the marketplace: one entry per plugin
+mods/<name>/                      a mod
+themes/<name>/                    a theme
+  .claude-plugin/plugin.json      name, version, options
+  hooks/hooks.json                the hooks module to load
+  hooks/register.tsx              the mod itself
+  tests/*.test.tsx                tests
+  types/index.d.ts                the mod's state contract, where it keeps state
+```
+
+Check and test a plugin the way the engine will:
+
+```bash
+claude plugin validate mods/cache-control
+```
+
+```bash
+claude plugin test mods/cache-control
+```
+
+Try a plugin from its folder without installing it; it reloads as you edit:
+
+```bash
+claude --plugin-dir mods/cache-control
+```
+
+**Shipping a change.** Installed copies update by version, so raise `version` in the plugin's `plugin.json`, push, then run `claude plugin marketplace update claude-mods` and `claude plugin update <name>@claude-mods`.
+
+`mods/usage-bar/hooks/slim.tsx` and `mods/cache-control/hooks/slim.tsx` are the same file (the slim bar and the state chips). Keep them in sync.
+
+## Credits
+
+cache-control's ideas come from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-control (claude-code-templates, MIT). The themes' `make-colors.js` comes from Claude Code's plugin-authoring skill.
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Bryan Villafuerte
