@@ -55,7 +55,9 @@ export const register: Register = on => {
     const r = await next(e)
     const stored = await $.store.get('marks')
     if (stored && typeof stored === 'object') await update($, marks, () => stored as Record<string, DayMark>)
-    await $.command.register({ name: 'usage', description: 'Plan usage: each window, its pace and a daily budget' })
+    await $.command
+      .register({ name: 'limits', description: 'Plan usage limits: each window, its pace and a daily budget' })
+      .catch(err => $.ui.log(`usage-bar: /limits not registered: ${String(err)}`, { to: 'debug' }))
     ticker?.cancel()
     ticker = $.clock.every(60_000, () => void refresh($))
     void refresh($)
@@ -76,7 +78,7 @@ export const register: Register = on => {
     return r
   })
 
-  on('command.run', { command: 'usage' }, async $ => {
+  on('command.run', { command: 'limits' }, async $ => {
     await refresh($)
     await openPane($)
     const list = await read($, windows)

@@ -1,6 +1,6 @@
 {
   "name": "usage-bar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Your plan usage above the prompt (5-hour, weekly and any model window), with a pane that says how much you can use per day to last until each reset",
   "license": "MIT",
   "types": "./types/index.d.ts"

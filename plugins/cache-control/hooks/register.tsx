@@ -350,6 +350,11 @@ export const register: Register = (on, options) => {
     const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
     const last = [...(await read($, samples))].reverse().find(x => !x.isPing) ?? view.last
     const hit = hitRatio(last)
+    // Ten cells split by share; any part that is there gets at least one.
+    const total = Math.max(1, promptTokens(last))
+    const share = (n: number) => (n > 0 ? Math.max(1, Math.round((n / total) * 10)) : 0)
+    const cells = { read: share(last.read), write: share(last.write), fresh: share(last.fresh) }
+    cells.read = Math.max(0, 10 - cells.write - cells.fresh)
     const word = { warm: 'warm', soon: 'expiring', cold: 'cold', compacted: 'compacted', uncached: 'uncached', none: '' }[view.kind]
     const advice =
       view.kind === 'warm'
@@ -369,12 +374,17 @@ export const register: Register = (on, options) => {
         <Box justifyContent="space-between">
           <Text>
             <Text color={color}>● cache </Text>
-            <Text color={hit >= 0.8 ? 'success' : hit >= 0.4 ? 'warning' : 'error'}>{bar(hit, 10)}</Text>
-            <Text> {Math.round(hit * 100)}%</Text>
-            <Text dimColor>
-              {' '}
-              read {fmtTokens(last.read)} · wrote {fmtTokens(last.write)} · new {fmtTokens(last.fresh)}
-            </Text>
+            {/* The bar in three parts, the same colors as the numbers after it. */}
+            <Text color="success">{'█'.repeat(cells.read)}</Text>
+            <Text color="warning">{'█'.repeat(cells.write)}</Text>
+            <Text color="suggestion">{'█'.repeat(cells.fresh)}</Text>
+            <Text> {Math.round(hit * 100)}% </Text>
+            <Text dimColor> read </Text>
+            <Text color="success">{fmtTokens(last.read)}</Text>
+            <Text dimColor> · wrote </Text>
+            <Text color="warning">{fmtTokens(last.write)}</Text>
+            <Text dimColor> · new </Text>
+            <Text color="suggestion">{fmtTokens(last.fresh)}</Text>
             {view.leftMs > 0 && <Text color={color}> ⏱ {fmtClock(view.leftMs)}</Text>}
             <Text dimColor> {ttl}</Text>
             {warm > now && <Text color="warning"> ♨ {fmtClock(warm - now)}</Text>}

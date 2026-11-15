@@ -31,7 +31,7 @@ test('labels', () => {
 const engine = (on: On, limits: { kind: string; percentUsed: number; resetsAt?: string }[]) => {
   mock.store(on)
   mock.clock(on, { now: NOW })
-  on('command.register', () => ({ value: { command: 'usage' } }))
+  on('command.register', () => ({ value: { command: 'limits' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: limits } }))
@@ -44,7 +44,7 @@ test('the band and the pane draw every window, on the terminal and desktop', asy
     { kind: 'seven_day_fable', percentUsed: 12, resetsAt: new Date(NOW + 5 * 86_400_000).toISOString() },
   ])
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.command.run({ command: 'usage', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  await $.command.run({ command: 'limits', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({
@@ -72,6 +72,6 @@ test('the band and the pane draw every window, on the terminal and desktop', asy
 test('no windows, no band', async ($, on) => {
   engine(on, [])
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const text = (await $.command.run({ command: 'usage', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
+  const text = (await $.command.run({ command: 'limits', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
   expect(text).toContain('No usage windows')
 })

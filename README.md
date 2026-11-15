@@ -7,7 +7,7 @@ Mods for Claude Code: a switchboard for tools, connectors and skills, a prompt-c
 | [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers, single tools and skills on and off from a pane | `/tools` |
 | [cache-control](plugins/cache-control) | Prompt-cache meter with a countdown, cold-send cost, a confirmation before expensive cold sends, and keep-warm pings | `/cache` |
 | [nebula](plugins/nebula) | Nebula: a soft space look for light and dark, with a band of lilac and rose nebula gas and clean stars | `/nebula` |
-| [usage-bar](plugins/usage-bar) | Your plan usage (5-hour, weekly, model windows) above the prompt, with the pace and a daily budget per window | `/usage` |
+| [usage-bar](plugins/usage-bar) | Your plan usage (5-hour, weekly, model windows) above the prompt, with the pace and a daily budget per window | `/limits` |
 
 ## Install
 
@@ -34,7 +34,7 @@ The repository is private, so installing needs GitHub access to it on your compu
 - **Other servers and single tools** are blocked: the model still sees them, but a call is denied with a reason.
 - From the prompt: `/tools off gmail`, `/tools on slack`, `/tools list`.
 
-- **Skills:** a skill turned off leaves the listing the model reads, its Skill tool call is denied, and running it by name gives a notice instead of its text. `/tools off commit` works for skills too (`skill:<name>` when a tool shares the name).
+- **Skills:** a skill turned off leaves the listing the model reads, its Skill tool call is denied, and running it by name gives a notice instead of its text. (Where an organization security plugin handles the listing first, the skill stays listed but still cannot run.) `/tools off commit` works for skills too (`skill:<name>` when a tool shares the name).
 
 Blocks are kept across sessions.
 
@@ -65,7 +65,7 @@ It applies to the Code tab of the desktop app and to the mobile app, from the ne
 
 A row above the prompt with each usage window the API reports for your plan: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one, each with a meter and the time to its reset. An API key reports none, and the row stays away.
 
-`/usage` (or **Details**) opens a pane with, for each window:
+`/limits` (or **Details**) opens a pane with, for each window:
 
 - when it started (its reset minus its length) and when it resets;
 - where an even pace would be by now, and how far over or under you are;
