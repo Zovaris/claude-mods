@@ -1,9 +1,9 @@
 /**
  * nebula: the Nebula look, for light and dark.
  *
- * Deep-space grays with a violet accent; cyan, mint, amber and coral for
+ * Violet-black grays with an orchid accent; mint, amber, coral and rose for
  * meaning (generated with the design system's makeColors), and a scene of
- * stars, nebula glows and a ringed planet. Desktop and mobile apps draw it; the
+ * a gas nebula band and clean stars. Desktop and mobile apps draw it; the
  * terminal draws no look. /nebula turns it off and on, kept across sessions.
  */
 import type { EngineInterface, Register, ThemeSetArgs } from 'claude-code'
@@ -55,6 +55,6 @@ export const register: Register = on => {
     if (e.props.plugin !== $.plugin.name || e.props.scene !== SCENE) return next(e)
     if (e.surface !== 'desktop' && e.surface !== 'mobile') return next(e)
     const { Svg } = $.ui.resolve(e)
-    return <Svg source={SVG} alt="A starfield with nebula glows and a ringed planet" isInteractive />
+    return <Svg source={SVG} alt="A band of lilac and rose nebula gas with stars" isInteractive />
   })
 }

@@ -5,12 +5,14 @@
  *     + › Connectors), so their tools leave the model's list
  *   - everything else is blocked at `tool.call`: the model still sees the
  *     tool, but a call to it is denied with a reason
+ *   - skills are blocked three ways: left out of the listing the model reads,
+ *     denied at the Skill tool, and their text replaced if one is run by name
  *   - /tools opens the pane; /tools on|off <name> and /tools list from the prompt
  */
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ServerEntry, ToolEntry } from '../types'
+import type { ServerEntry, SkillEntry, ToolEntry } from '../types'
 
 const PANE = 'tool-toggle'
 const STORE_KEY = 'disabled'
@@ -26,6 +28,27 @@ const tools = atom({ plugin: 'tool-toggle', key: 'tools' } as const, [], { shape
 const servers = atom({ plugin: 'tool-toggle', key: 'servers' } as const, [], { shape: 'servers-1' })
 const pending = atom({ plugin: 'tool-toggle', key: 'pending' } as const, [], { shape: 'pending-1' })
 const query = atom({ plugin: 'tool-toggle', key: 'query' } as const, '', { shape: 'query-1' })
+const skills = atom({ plugin: 'tool-toggle', key: 'skills' } as const, [], { shape: 'skills-1' })
+
+// A skill is blocked as `skill:<name>`.
+const skillKey = (name: string) => `skill:${name}`
+const SKILL_OFF = (name: string) =>
+  `The user turned off the "${name}" skill with the tool-toggle mod. Don't use it; go on without it, or ask them to turn it on with /tools.`
+
+/** The skill listing the model reads, without the skills that are off. */
+function withoutSkills(text: string, off: Set<string>): string {
+  if (off.size === 0) return text
+  const lines = text.split('\n')
+  const out: string[] = []
+  let isDropping = false
+  for (const line of lines) {
+    const m = /^- ([^:\s]+):/.exec(line)
+    if (m) isDropping = off.has(m[1] ?? '')
+    else if (/^\S/.test(line)) isDropping = false
+    if (!isDropping) out.push(line)
+  }
+  return out.join('\n')
+}
 
 type Section = 'connector' | 'local' | 'app' | 'builtin'
 type Group = {
@@ -62,8 +85,18 @@ const save = async ($: EngineInterface, fn: (off: string[]) => string[]) => {
 }
 
 const refresh = async ($: EngineInterface) => {
-  const [list, status] = await Promise.all([$.tool.list(), $.tool.call({ tool: STATUS_TOOL }).catch(() => null)])
+  const [list, status, usage] = await Promise.all([
+    $.tool.list(),
+    $.tool.call({ tool: STATUS_TOOL }).catch(() => null),
+    $.session.usage({ breakdown: 'summary' }).catch(() => undefined),
+  ])
   await update($, tools, () => list.map(t => ({ name: t.name, server: serverOf(t.name) })))
+  const listed = usage?.context.breakdown?.skills?.skillFrontmatter
+  if (listed) {
+    const known = new Map((await read($, skills)).map(s => [s.name, s]))
+    for (const s of listed) known.set(s.name, { name: s.name, source: String(s.source), pluginName: s.pluginName })
+    await update($, skills, () => [...known.values()].sort((a, b) => a.name.localeCompare(b.name)))
+  }
   if (status && status.deny === undefined) {
     try {
       const parsed = JSON.parse(textOf(status)) as { servers?: ServerEntry[] }
@@ -170,8 +203,22 @@ export const register: Register = on => {
         deny: `The user turned off "${e.tool}" with the tool-toggle mod. Don't retry it; use another tool or ask them to turn it on with /tools.`,
       }
     }
+    if (e.tool === 'Skill' && off.includes(skillKey(e.skill))) return { deny: SKILL_OFF(e.skill) }
     return next(e)
   }).catch(($, e, next) => next(e))
+
+  // A skill run by name (/name, a preload) reads a notice instead of its text.
+  on('skill.prompt', async ($, e, next) => {
+    const off = await read($, disabled)
+    return off.includes(skillKey(e.skill)) ? { text: SKILL_OFF(e.skill) } : next(e)
+  })
+
+  // The listing of skills the model reads leaves out the ones that are off.
+  on('prompt.attachment', { type: 'skill_listing' }, async ($, e, next) => {
+    const off = new Set((await read($, disabled)).filter(x => x.startsWith('skill:')).map(x => x.slice(6)))
+    if (off.size === 0 || typeof e.text !== 'string') return next(e)
+    return next({ ...e, text: withoutSkills(e.text, off) })
+  })
 
   on('command.run', { command: 'tools' }, async ($, e) => {
     const [verb = '', ...rest] = e.args.trim().split(/\s+/).filter(Boolean)
@@ -191,12 +238,26 @@ export const register: Register = on => {
       const lines = gs
         .filter(g => g.section === 'connector' || g.section === 'local')
         .map(g => `- ${g.name}: ${isGroupOn(g, off) ? 'on' : 'off'}`)
-      const loose = off.filter(x => !x.startsWith('mcp:'))
-      return { text: [...lines, ...(loose.length ? [`Blocked tools: ${loose.join(', ')}`] : [])].join('\n') }
+      const loose = off.filter(x => !x.startsWith('mcp:') && !x.startsWith('skill:'))
+      const offSkills = off.filter(x => x.startsWith('skill:')).map(x => x.slice(6))
+      return {
+        text: [
+          ...lines,
+          ...(loose.length ? [`Blocked tools: ${loose.join(', ')}`] : []),
+          ...(offSkills.length ? [`Skills off: ${offSkills.join(', ')}`] : []),
+        ].join('\n'),
+      }
     }
 
     if (verb === 'on' || verb === 'off') {
-      if (!word) return { text: `Usage: /tools ${verb} <connector|tool>` }
+      if (!word) return { text: `Usage: /tools ${verb} <connector|tool|skill>` }
+      // A skill by name, or `skill:<name>` when a tool shares it.
+      const skillName = word.startsWith('skill:') ? word.slice(6) : word
+      const isSkill = (await read($, skills)).some(s => s.name === skillName)
+      if (isSkill && (word.startsWith('skill:') || !findGroup(word, gs))) {
+        await save($, o => (verb === 'off' ? [...o, skillKey(skillName)] : o.filter(x => x !== skillKey(skillName))))
+        return { text: `Skill ${skillName}: ${verb}` }
+      }
       const g = findGroup(word, gs)
       if (g) {
         if (LOCKED.has(g.prefix)) return { text: `${g.name} can't be turned off: this mod uses it.` }
@@ -207,7 +268,9 @@ export const register: Register = on => {
       const matches = all.filter(t => t.name === word || shortName(t) === word)
       if (matches.length !== 1) {
         return {
-          text: matches.length ? `"${word}" is ambiguous: ${matches.map(t => t.name).join(', ')}` : `No connector or tool named "${word}".`,
+          text: matches.length
+            ? `"${word}" is ambiguous: ${matches.map(t => t.name).join(', ')}`
+            : `No connector, tool or skill named "${word}".`,
         }
       }
       const name = matches[0]?.name ?? word
@@ -229,8 +292,66 @@ export const register: Register = on => {
     const busy = await read($, pending)
     const q = (await read($, query)).trim().toLowerCase()
     const gs = groupsOf(await read($, tools), await read($, servers))
+    const skillList = await read($, skills)
 
     const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+    const sourceOf = (s: SkillEntry) =>
+      s.pluginName ??
+      ({ userSettings: 'user', projectSettings: 'project', policySettings: 'managed', 'built-in': 'built-in', mcp: 'MCP' } as Record<string, string>)[
+        s.source
+      ] ??
+      s.source
+
+    const skillRow = (s: SkillEntry) => {
+      const isOn = !off.includes(skillKey(s.name))
+      return (
+        <Box key={`skill:${s.name}`} justifyContent="space-between" alignItems="center" paddingLeft={1} paddingRight={1}>
+          <Box alignItems="center">
+            <Box width={2}>
+              <Text color={isOn ? 'success' : 'inactive'}>●</Text>
+            </Box>
+            <Text mono size="footnote" dimColor={!isOn}>
+              {s.name}
+            </Text>
+            <Text size="caption" dimColor>
+              {'  '}
+              {sourceOf(s)}
+            </Text>
+          </Box>
+          <Button
+            key={`sk:${s.name}`}
+            plain
+            dimColor
+            label={isOn ? 'Turn off' : 'Turn on'}
+            onPress={() => void save($, o => (isOn ? [...o, skillKey(s.name)] : o.filter(x => x !== skillKey(s.name))))}
+          />
+        </Box>
+      )
+    }
+
+    const skillsSection = () => {
+      if (skillList.length === 0) return null
+      const isOpen = open.includes('section:skills')
+      const onCount = skillList.filter(s => !off.includes(skillKey(s.name))).length
+      return (
+        <Box key="s:skills" flexDirection="column" marginTop={2}>
+          <Box key="sh:skills" justifyContent="space-between" alignItems="center" paddingX={1}>
+            <Text weight="semibold">Skills</Text>
+            <Box gap={2} alignItems="center">
+              <Text size="caption" dimColor>
+                {onCount} of {skillList.length} on
+              </Text>
+              <Button key="section:skills" plain dimColor label={isOpen ? 'Hide' : 'Show'} onPress={() => toggleOpen('section:skills')} />
+            </Box>
+          </Box>
+          {isOpen && (
+            <Box key="sb:skills" flexDirection="column" marginTop={1}>
+              {skillList.map(skillRow)}
+            </Box>
+          )}
+        </Box>
+      )
+    }
     const toggleOpen = (k: string) => void update($, expanded, ex => (ex.includes(k) ? ex.filter(x => x !== k) : [...ex, k]))
     const dot = (tone: 'on' | 'off' | 'warn') => (
       <Box width={2}>
@@ -354,6 +475,7 @@ export const register: Register = on => {
           g.tools.filter(t => shortName(t).toLowerCase().includes(q) || g.name.toLowerCase().includes(q)).map(t => ({ g, t })),
         )
       : []
+    const skillResults = q ? skillList.filter(sk => sk.name.toLowerCase().includes(q)) : []
     const connectors = gs.filter(g => g.section === 'connector')
     const onConnectors = connectors.filter(g => isGroupOn(g, off)).length
     const blockedTools = off.filter(x => !x.startsWith('mcp:')).length
@@ -387,17 +509,21 @@ export const register: Register = on => {
         {gs.length === 0 && <Text dimColor>Loading…</Text>}
         {q ? (
           <Box key="results" flexDirection="column" marginTop={1}>
-            {results.length === 0 && (
+            {results.length === 0 && skillResults.length === 0 && (
               <Box paddingX={1}>
                 <Text dimColor size="footnote">
                   Nothing matches "{q}".
                 </Text>
               </Box>
             )}
+            {skillResults.slice(0, 40).map(skillRow)}
             {results.slice(0, 80).map(({ g, t }) => toolRow(g, t, `${g.name} · ${shortName(t)}`, 1))}
           </Box>
         ) : (
-          <Box flexDirection="column">{SECTIONS.map(s => section(s.key, s.title, s.isCollapsible))}</Box>
+          <Box flexDirection="column">
+            {SECTIONS.map(s => section(s.key, s.title, s.isCollapsible))}
+            {skillsSection()}
+          </Box>
         )}
       </Box>
     )

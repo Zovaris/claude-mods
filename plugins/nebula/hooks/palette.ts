@@ -1,31 +1,32 @@
 import { makeColors } from './make-colors.js'
 
-// Deep-space grays with a violet accent; cyan, mint, amber and coral keep their meaning.
+// Violet-black grays with an orchid accent, from the scene's lilac, rose and
+// peach; mint, amber and coral keep their meaning.
 export const { theme, problems } = makeColors({
   label: 'Nebula',
-  roles: { accent: '#8b7cf6', danger: '#ef6f7a', success: '#5fc59a', warning: '#e7b85c', pro: '#5cc8e8' },
+  roles: { accent: '#a98be8', danger: '#ee7f8a', success: '#7cc9a0', warning: '#e9bd78', pro: '#f2a3c4' },
   light: {
     gray: {
       anchors: {
-        'surface-0': '#eef0f7',
-        'surface-1': '#f4f5fa',
-        'surface-2': '#fafbfd',
-        'text-primary': '#1d2133',
-        'text-secondary': '#444a63',
-        'text-muted': '#5d6480',
+        'surface-0': '#f3f1f7',
+        'surface-1': '#f7f5fa',
+        'surface-2': '#fbfafd',
+        'text-primary': '#221f2e',
+        'text-secondary': '#4a4558',
+        'text-muted': '#625c72',
       },
     },
   },
   dark: {
     gray: {
       anchors: {
-        'surface-0': '#0b0e1a',
-        'surface-1': '#0f1322',
-        'surface-2': '#131829',
-        'surface-3': '#171d30',
-        'text-primary': '#e6e9f5',
-        'text-secondary': '#b8bfd6',
-        'text-muted': '#8b93ad',
+        'surface-0': '#0d0c13',
+        'surface-1': '#121119',
+        'surface-2': '#17161f',
+        'surface-3': '#1c1a25',
+        'text-primary': '#ebe8f2',
+        'text-secondary': '#c0bccb',
+        'text-muted': '#96919f',
       },
     },
   },

@@ -6,6 +6,7 @@ export type ServerEntry = {
   status: string
   tool_count?: number
 }
+export type SkillEntry = { name: string; source: string; pluginName?: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -16,6 +17,7 @@ declare module 'claude-code' {
       servers: Shaped<ServerEntry[]>
       pending: Shaped<string[]>
       query: Shaped<string>
+      skills: Shaped<SkillEntry[]>
     }
   }
 }

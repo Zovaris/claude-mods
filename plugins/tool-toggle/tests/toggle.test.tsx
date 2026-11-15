@@ -82,3 +82,35 @@ test('the pane shows connectors by name and toggles them, on every surface', asy
     await ui.unmount()
   }
 })
+
+test('a skill turned off leaves the listing, the Skill tool and its own prompt', async ($, on) => {
+  engine(on, [])
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: {
+        window: 1_000_000,
+        breakdown: { skills: { totalSkills: 2, includedSkills: 2, tokens: 10, skillFrontmatter: [
+          { name: 'commit', source: 'userSettings', tokens: 5 },
+          { name: 'animate', source: 'plugin', pluginName: 'motion', tokens: 5 },
+        ] } } as never,
+      },
+      rateLimits: [],
+    },
+  }))
+  on('skill.prompt', (_, e) => ({ text: `the ${e.skill} skill` }))
+  on('prompt.attachment', (_, e) => ({ text: e.text }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  expect((await $.command.run(run('off commit'))).text).toBe('Skill commit: off')
+  expect((await $.tool.call({ tool: 'Skill', skill: 'commit' } as never)).deny).toContain('commit')
+  expect((await $.tool.call({ tool: 'Skill', skill: 'animate' } as never)).deny).toBeUndefined()
+  expect((await $.skill.prompt({ skill: 'commit', text: 'x' } as never)).text).toContain('turned off')
+
+  const listing = '- animate: Build an animation\n- commit: Commits the changes\n  in small steps\nTail line'
+  const shown = await $.prompt.attachment({ type: 'skill_listing', text: listing, origin: { kind: 'engine' } } as never)
+  expect(shown.text).toBe('- animate: Build an animation\nTail line')
+
+  await $.command.run(run('on commit'))
+  expect((await $.tool.call({ tool: 'Skill', skill: 'commit' } as never)).deny).toBeUndefined()
+})

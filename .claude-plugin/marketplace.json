@@ -4,6 +4,7 @@
   "plugins": [
     { "name": "tool-toggle", "source": "./plugins/tool-toggle" },
     { "name": "cache-control", "source": "./plugins/cache-control" },
-    { "name": "nebula", "source": "./plugins/nebula" }
+    { "name": "nebula", "source": "./plugins/nebula" },
+    { "name": "usage-bar", "source": "./plugins/usage-bar" }
   ]
 }

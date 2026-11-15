@@ -1,12 +1,13 @@
 # claude-mods
 
-Mods for Claude Code: a switchboard for tools and connectors, a prompt-cache meter, and a look.
+Mods for Claude Code: a switchboard for tools, connectors and skills, a prompt-cache meter, a usage bar, and a look.
 
 | Mod | What it does | Command |
 | --- | --- | --- |
-| [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers and single tools on and off from a pane | `/tools` |
+| [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers, single tools and skills on and off from a pane | `/tools` |
 | [cache-control](plugins/cache-control) | Prompt-cache meter with a countdown, cold-send cost, a confirmation before expensive cold sends, and keep-warm pings | `/cache` |
-| [nebula](plugins/nebula) | Nebula: a deep-space look for light and dark, with a starfield, nebula glows and a ringed planet | `/nebula` |
+| [nebula](plugins/nebula) | Nebula: a soft space look for light and dark, with a band of lilac and rose nebula gas and clean stars | `/nebula` |
+| [usage-bar](plugins/usage-bar) | Your plan usage (5-hour, weekly, model windows) above the prompt, with the pace and a daily budget per window | `/usage` |
 
 ## Install
 
@@ -16,6 +17,7 @@ At the prompt of a terminal session:
 /plugin install tool-toggle --marketplace sthbryan/claude-mods
 /plugin install cache-control --marketplace sthbryan/claude-mods
 /plugin install nebula --marketplace sthbryan/claude-mods
+/plugin install usage-bar --marketplace sthbryan/claude-mods
 ```
 
 Answer `y` to add the marketplace, then pick a scope. From a shell, use `claude plugin install <mod> --marketplace sthbryan/claude-mods`.
@@ -31,6 +33,8 @@ The repository is private, so installing needs GitHub access to it on your compu
 - **Connectors** (claude.ai) are switched for real, the same switch as + › Connectors, so their tools leave the model's list. The change applies when the turn ends.
 - **Other servers and single tools** are blocked: the model still sees them, but a call is denied with a reason.
 - From the prompt: `/tools off gmail`, `/tools on slack`, `/tools list`.
+
+- **Skills:** a skill turned off leaves the listing the model reads, its Skill tool call is denied, and running it by name gives a notice instead of its text. `/tools off commit` works for skills too (`skill:<name>` when a tool shares the name).
 
 Blocks are kept across sessions.
 
@@ -52,10 +56,23 @@ Ideas from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-
 
 A look for the desktop and mobile apps, in light and dark:
 
-- **Colors:** deep-space grays with a violet accent; mint, amber, coral and cyan keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so every surface, border and code color follows.
-- **Scene:** a seeded starfield with twinkling stars and a few bright glints, nebula glows drifting at the edges, a ringed planet low on the right, and a shooting star now and then. The middle stays quiet for the conversation, and the motion stops under reduced motion.
+- **Colors:** violet-black grays (not blue) with an orchid accent; mint, amber, coral and rose keep their meaning. Built with the design system's `makeColors`.
+- **Scene:** a band of nebula gas across the right side, made of fractal noise tinted lilac, rose and a warm peach core with dark dust lanes, and clean round stars, thick along the band and sparse elsewhere. The middle stays clear; a few stars twinkle, and motion stops under reduced motion.
 
-It applies to the Code tab of the desktop app and to the mobile app, from the next session after it's installed. `/nebula off` and `/nebula on` switch it; the choice is kept. Needs Claude Code 2.1.325 or newer.
+It applies to the Code tab of the desktop app and to the mobile app, from the next session after it's installed. `/nebula off` and `/nebula on` switch it. Needs Claude Code 2.1.325 or newer.
+
+## usage-bar
+
+A row above the prompt with each usage window the API reports for your plan: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one, each with a meter and the time to its reset. An API key reports none, and the row stays away.
+
+`/usage` (or **Details**) opens a pane with, for each window:
+
+- when it started (its reset minus its length) and when it resets;
+- where an even pace would be by now, and how far over or under you are;
+- how much you can use **per day** (weekly windows) or **per hour** (the 5-hour window) to last until the reset;
+- what you've used today, and when you'd run out at the current pace.
+
+"Today" counts from the first reading the mod saw on your local day.
 
 ## Development
 

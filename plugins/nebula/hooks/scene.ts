@@ -1,15 +1,21 @@
 /**
- * The Nebula scene: a deep starfield, nebula glows at the edges, a ringed
- * planet in the lower right and, now and then, a shooting star. Seeded, so the
- * sky is always the same. The middle stays quiet for the conversation.
+ * The Nebula scene: a band of gas across the right side of the sky, made of
+ * fractal noise (feTurbulence) tinted lilac, rose and a warm peach core, with
+ * darker dust carved through it; and clean round stars, thick along the band
+ * and sparse elsewhere. Seeded, so the sky is always the same. The middle
+ * stays quiet for the conversation; only a few stars twinkle.
  */
 
 const W = 1920
 const H = 1080
 
-export const SPACE = {
-  dark: { base: '#0b0e1a', violet: '#5b3fd1', magenta: '#a3418f', cyan: '#1f86b0', star: '#eef1ff' },
-  light: { base: '#eef0f7', violet: '#cbc2f7', magenta: '#efc3e2', cyan: '#bfe3f1', star: '#7c84a8' },
+export const SKY = {
+  dark: { base: '#0d0c13' },
+  light: { base: '#f3f1f7' },
+  lilac: [166, 135, 255],
+  rose: [255, 170, 205],
+  peach: [255, 214, 168],
+  starTints: ['#ffffff', '#f3eeff', '#ffe9d6', '#ffd9e8', '#e6e2ff'],
 }
 
 function rng(seed: number) {
@@ -23,116 +29,106 @@ function rng(seed: number) {
   }
 }
 
-type Glow = { id: string; tone: 'violet' | 'magenta' | 'cyan'; cx: number; cy: number; rx: number; ry: number; dx: number; dy: number; s: number }
+/** A gas layer: noise turned into alpha, filled with one color. */
+function gasFilter(id: string, rgb: number[], seed: number, freq: string, gain: number, cut: number): string {
+  const [r, g, b] = rgb.map(v => ((v ?? 0) / 255).toFixed(3))
+  return (
+    `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">` +
+    `<feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="5" seed="${seed}"/>` +
+    `<feColorMatrix type="matrix" values="0 0 0 0 ${r}  0 0 0 0 ${g}  0 0 0 0 ${b}  ${gain} 0 0 0 ${-cut}"/>` +
+    `</filter>`
+  )
+}
 
-const GLOWS: Glow[] = [
-  { id: 'a', tone: 'violet', cx: 160, cy: 140, rx: 640, ry: 420, dx: 40, dy: 30, s: 70 },
-  { id: 'b', tone: 'magenta', cx: 420, cy: 40, rx: 360, ry: 220, dx: 30, dy: 20, s: 84 },
-  { id: 'c', tone: 'cyan', cx: 60, cy: 1020, rx: 520, ry: 360, dx: 40, dy: -30, s: 76 },
-  { id: 'd', tone: 'violet', cx: 1900, cy: 260, rx: 420, ry: 520, dx: -30, dy: 30, s: 90 },
-  { id: 'e', tone: 'magenta', cx: 1660, cy: 1060, rx: 520, ry: 300, dx: -40, dy: -20, s: 66 },
-]
+/** Where the band lies: a long soft ellipse, tilted, along the right side. */
+const BAND = { cx: 1560, cy: 520, rx: 300, ry: 780, angle: 24 }
 
-export function sceneSvg(seed = 42): string {
+/** Whether a point is inside the band, softly: 1 on its spine, 0 outside. */
+function bandWeight(x: number, y: number): number {
+  const a = (BAND.angle * Math.PI) / 180
+  const dx = x - BAND.cx
+  const dy = y - BAND.cy
+  const u = dx * Math.cos(a) + dy * Math.sin(a)
+  const v = -dx * Math.sin(a) + dy * Math.cos(a)
+  const d = (u / BAND.rx) ** 2 + (v / BAND.ry) ** 2
+  return Math.max(0, 1 - d)
+}
+
+export function sceneSvg(seed = 7): string {
   const rand = rng(seed)
-  const d = SPACE.dark
-  const l = SPACE.light
-
-  const grads = GLOWS.map(
-    g =>
-      `<radialGradient id="g${g.id}">` +
-      `<stop offset="0" class="t-${g.tone}" stop-color="${d[g.tone]}" stop-opacity=".5"/>` +
-      `<stop offset=".5" class="t-${g.tone}" stop-color="${d[g.tone]}" stop-opacity=".14"/>` +
-      `<stop offset="1" class="t-${g.tone}" stop-color="${d[g.tone]}" stop-opacity="0"/>` +
-      `</radialGradient>`,
-  ).join('')
-
-  const glows = GLOWS.map(
-    (g, i) =>
-      `<ellipse class="glow" style="--dx:${g.dx}px;--dy:${g.dy}px;animation-duration:${g.s}s;animation-delay:-${i * 13}s" ` +
-      `cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" fill="url(#g${g.id})"/>`,
-  ).join('')
-
-  // Three layers of stars: many faint, some medium, a few bright with a glint.
-  const stars: string[] = []
-  for (let i = 0; i < 220; i++) {
-    const x = rand() * W
-    const y = rand() * H
-    // Fewer and fainter stars in the middle column, where the words sit.
-    const inMiddle = x > 600 && x < 1320
-    if (inMiddle && rand() < 0.6) continue
-    const layer = rand()
-    const r = layer < 0.75 ? 0.5 + rand() * 0.6 : layer < 0.95 ? 1 + rand() * 0.6 : 1.6 + rand() * 0.8
-    const base = (layer < 0.75 ? 0.25 : 0.5) + rand() * 0.3
-    const twinkle = rand() < 0.35
-    stars.push(
-      `<circle class="star${twinkle ? ' tw' : ''}" cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${r.toFixed(2)}" ` +
-        `fill="${d.star}" opacity="${(inMiddle ? base * 0.6 : base).toFixed(2)}"` +
-        (twinkle ? ` style="animation-duration:${(3 + rand() * 5).toFixed(1)}s;animation-delay:-${(rand() * 6).toFixed(1)}s"` : '') +
-        `/>`,
-    )
-  }
-  const glints = [
-    [312, 248],
-    [1702, 132],
-    [1540, 702],
-    [218, 772],
-  ]
-    .map(
-      ([x, y]) =>
-        `<g class="glint" fill="${d.star}"><circle cx="${x}" cy="${y}" r="2.2"/>` +
-        `<rect x="${(x ?? 0) - 9}" y="${(y ?? 0) - 0.5}" width="18" height="1" opacity=".55"/>` +
-        `<rect x="${(x ?? 0) - 0.5}" y="${(y ?? 0) - 9}" width="1" height="18" opacity=".55"/></g>`,
-    )
-    .join('')
-
-  // A ringed planet low in the right corner: back half of the ring, planet, front half.
-  const px = 1760
-  const py = 930
-  const pr = 120
-  const planet =
-    `<g class="planet" transform="rotate(-16 ${px} ${py})">` +
-    `<path d="M${px - 250},${py} A250,52 0 0 1 ${px + 250},${py}" fill="none" stroke="url(#ring)" stroke-width="10" opacity=".55"/>` +
-    `<circle cx="${px}" cy="${py}" r="${pr}" fill="url(#planet)"/>` +
-    `<circle cx="${px}" cy="${py}" r="${pr}" fill="url(#shade)"/>` +
-    `<path d="M${px - 250},${py} A250,52 0 0 0 ${px + 250},${py}" fill="none" stroke="url(#ring)" stroke-width="10" opacity=".8"/>` +
-    `</g>`
 
   const defs =
-    grads +
-    `<radialGradient id="planet" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#7d6ae0"/><stop offset=".55" stop-color="#3a2f86"/><stop offset="1" stop-color="#141433"/></radialGradient>` +
-    `<radialGradient id="shade" cx=".75" cy=".8" r=".8"><stop offset=".3" stop-color="#05060d" stop-opacity="0"/><stop offset="1" stop-color="#05060d" stop-opacity=".85"/></radialGradient>` +
-    `<linearGradient id="ring" x1="0" x2="1"><stop offset="0" stop-color="#c8bdfc" stop-opacity="0"/><stop offset=".25" stop-color="#c8bdfc" stop-opacity=".7"/><stop offset=".75" stop-color="#9fd6ee" stop-opacity=".7"/><stop offset="1" stop-color="#9fd6ee" stop-opacity="0"/></linearGradient>` +
-    `<linearGradient id="trail" x1="0" x2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff" stop-opacity=".9"/></linearGradient>`
+    gasFilter('lilac', SKY.lilac, 7, '0.0016 0.0026', 1.9, 0.6) +
+    gasFilter('rose', SKY.rose, 21, '0.0022 0.0034', 2.1, 0.85) +
+    gasFilter('peach', SKY.peach, 3, '0.0030 0.0040', 2.8, 1.45) +
+    gasFilter('dust', [8, 7, 12], 41, '0.0045 0.0060', 2.4, 1.15) +
+    // The band's mask: bright on its spine, gone at its edge.
+    `<radialGradient id="bandFade" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="#fff" stop-opacity=".75"/><stop offset=".7" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>` +
+    `<mask id="band" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">` +
+    `<ellipse cx="${BAND.cx}" cy="${BAND.cy}" rx="${BAND.rx * 1.7}" ry="${BAND.ry}" transform="rotate(${BAND.angle} ${BAND.cx} ${BAND.cy})" fill="url(#bandFade)"/></mask>` +
+    // A second, faint wisp low on the left.
+    `<radialGradient id="wispFade" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>` +
+    `<mask id="wisp" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">` +
+    `<ellipse cx="170" cy="980" rx="460" ry="260" transform="rotate(-12 170 980)" fill="url(#wispFade)"/></mask>`
 
-  // A shooting star crosses the upper left once every 23 s.
-  const meteor = `<g class="meteor"><rect x="0" y="0" width="160" height="1.6" rx=".8" fill="url(#trail)"/></g>`
+  const full = (filter: string, opacity: number) =>
+    `<rect width="${W}" height="${H}" filter="url(#${filter})" opacity="${opacity}"/>`
+
+  const nebula =
+    `<g class="nebula">` +
+    `<g mask="url(#band)">${full('lilac', 0.95)}${full('rose', 0.85)}${full('peach', 0.8)}${full('dust', 0.6)}</g>` +
+    `<g mask="url(#wisp)">${full('lilac', 0.45)}${full('rose', 0.3)}</g>` +
+    `</g>`
+
+  // Stars: many small ones along the band, a scattering elsewhere, the middle kept sparse.
+  const stars: string[] = []
+  const place = (count: number, pick: () => [number, number] | null) => {
+    for (let i = 0; i < count; i++) {
+      const p = pick()
+      if (!p) continue
+      const [x, y] = p
+      const big = rand()
+      const r = big < 0.82 ? 0.45 + rand() * 0.45 : big < 0.97 ? 0.9 + rand() * 0.4 : 1.3 + rand() * 0.5
+      const tint = SKY.starTints[Math.floor(rand() * SKY.starTints.length)]
+      const op = (0.35 + rand() * 0.55).toFixed(2)
+      const twinkle = r > 0.9 && rand() < 0.4
+      stars.push(
+        `<circle class="star${twinkle ? ' tw' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" fill="${tint}" opacity="${op}"` +
+          (twinkle ? ` style="animation-duration:${(4 + rand() * 6).toFixed(1)}s;animation-delay:-${(rand() * 8).toFixed(1)}s"` : '') +
+          `/>`,
+      )
+    }
+  }
+  // Along the band: sample, keep in proportion to how deep in the band.
+  place(1400, () => {
+    const x = 1000 + rand() * 920
+    const y = rand() * H
+    return rand() < bandWeight(x, y) ** 0.7 ? [x, y] : null
+  })
+  // Elsewhere: sparse, sparser in the middle column.
+  place(260, () => {
+    const x = rand() * W
+    const y = rand() * H
+    if (x > 560 && x < 1300 && rand() < 0.75) return null
+    return [x, y]
+  })
 
   const style =
-    `.glow{transform-box:fill-box;transform-origin:center;animation:drift 70s ease-in-out infinite alternate}` +
-    `.tw{animation:twinkle 5s ease-in-out infinite alternate}` +
-    `.glint{animation:twinkle 7s ease-in-out infinite alternate}` +
-    `.planet{animation:float 40s ease-in-out infinite alternate}` +
-    `.meteor{opacity:0;animation:meteor 23s linear infinite;animation-delay:4s}` +
-    `@keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(var(--dx),var(--dy)) scale(1.07)}}` +
-    `@keyframes twinkle{from{opacity:.2}to{opacity:.95}}` +
-    `@keyframes float{from{transform:rotate(-16deg) translateY(0)}to{transform:rotate(-16deg) translateY(-8px)}}` +
-    `@keyframes meteor{0%{opacity:0;transform:translate(180px,60px) rotate(18deg)}2%{opacity:1}6%{opacity:0;transform:translate(620px,200px) rotate(18deg)}100%{opacity:0;transform:translate(620px,200px) rotate(18deg)}}` +
-    `@media (prefers-color-scheme:light){` +
-    `.base{fill:${l.base}}.t-violet{stop-color:${l.violet}}.t-magenta{stop-color:${l.magenta}}.t-cyan{stop-color:${l.cyan}}` +
-    `.star,.glint{fill:${l.star}}.meteor{display:none}}` +
-    `@media (prefers-reduced-motion:reduce){.glow,.tw,.glint,.planet,.meteor{animation:none}}`
+    `.base{fill:${SKY.dark.base}}` +
+    `.nebula{animation:breathe 40s ease-in-out infinite alternate}` +
+    `.tw{animation:twinkle 6s ease-in-out infinite alternate}` +
+    `@keyframes breathe{from{opacity:.88}to{opacity:1}}` +
+    `@keyframes twinkle{from{opacity:.2}to{opacity:1}}` +
+    `@media (prefers-color-scheme:light){.base{fill:${SKY.light.base}}.nebula{opacity:.55;animation:none}.star{display:none}}` +
+    `@media (prefers-reduced-motion:reduce){.nebula,.tw{animation:none}}`
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">` +
     `<style>${style}</style>` +
     `<defs>${defs}</defs>` +
-    `<rect class="base" fill="${d.base}" width="${W}" height="${H}"/>` +
-    glows +
+    `<rect class="base" fill="${SKY.dark.base}" width="${W}" height="${H}"/>` +
+    nebula +
     stars.join('') +
-    glints +
-    meteor +
-    planet +
     `</svg>`
   )
 }
