@@ -1,6 +1,6 @@
 {
   "name": "cache-control",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Prompt-cache meter: hit rate, a countdown to expiry, the cost of a cold send, a confirmation before an expensive cold send, and keep-warm pings",
   "license": "MIT",
   "types": "./types/index.d.ts",

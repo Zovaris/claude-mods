@@ -63,7 +63,7 @@ It applies to the Code tab of the desktop app and to the mobile app, from the ne
 
 ## usage-bar
 
-A row above the prompt with each usage window the API reports for your plan: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one, each with a meter and the time to its reset. An API key reports none, and the row stays away.
+A row above the prompt with each usage window the API reports for your plan: `5h`, `Week`, and a model's own week (such as Fable) when your plan has one. Each has a slim bar with a mark where an even pace would be now, its percentage, a state (under pace, on pace, over pace, well over pace, nearly full, limit reached) and the time to its reset. The terminal draws the bar as `━━━━┃━━━━`. An API key reports none, and the row stays away.
 
 `/limits` (or **Details**) opens a pane with, for each window:
 

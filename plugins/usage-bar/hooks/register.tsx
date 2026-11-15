@@ -14,7 +14,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { DayMark, Window } from '../types'
-import { dayOf, fmtLeft, fmtPct, fmtWhen, labelOf, meterCells, paceOf, sortWindows, titleOf, toneOf } from './usage'
+import { chip, slimBar, THEME_TONE } from './slim'
+import { dayOf, fmtLeft, fmtPct, fmtWhen, labelOf, paceOf, paceState, sortWindows, titleOf } from './usage'
 
 const PANE = 'usage-bar'
 const windows = atom({ plugin: 'usage-bar', key: 'windows' } as const, [], { shape: 'windows-1' })
@@ -86,35 +87,31 @@ export const register: Register = on => {
     return { text: 'Usage pane opened.' }
   })
 
+  // The band: per window, its label, a slim bar with the even-pace mark, the
+  // percentage, a state chip and the time to reset.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, windows)
     if (e.props.hasSurvey || list.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-
-    // Solid blocks: the used share in the pace's color, the rest faint.
-    const blocks = (pct: number, cells: number, tone: string) => {
-      const { filled, empty } = meterCells(pct, cells)
-      return (
-        <Text>
-          <Text color={tone}>{'█'.repeat(filled)}</Text>
-          <Text color="subtle">{'█'.repeat(empty)}</Text>
-        </Text>
-      )
-    }
     const now = await $.clock.now()
     return (
-      <Box justifyContent="space-between">
-        <Box gap={3}>
+      <Box justifyContent="space-between" alignItems="center">
+        <Box gap={4} alignItems="center">
           {list.map(w => {
             const p = paceOf(w, now)
-            const tone = toneOf(p)
+            const state = paceState(p)
             return (
-              <Text key={`w:${w.kind}`}>
-                <Text dimColor>{labelOf(w.kind)} </Text>
-                {blocks(p.used, 10, tone)}
-                <Text> {fmtPct(p.used)}</Text>
-                {p.leftMs !== null && <Text dimColor> · {fmtLeft(p.leftMs)}</Text>}
-              </Text>
+              <Box key={`w:${w.kind}`} gap={1} alignItems="center">
+                <Text dimColor>{labelOf(w.kind)}</Text>
+                {slimBar($, e, [{ share: p.used / 100, tone: state.tone }], p.expected === null ? null : p.expected / 100, {
+                  width: 96,
+                  cells: 10,
+                  key: `bar:${w.kind}`,
+                })}
+                <Text>{fmtPct(p.used)}</Text>
+                {chip($, e, state.label, state.tone)}
+                {p.leftMs !== null && <Text dimColor>{fmtLeft(p.leftMs)}</Text>}
+              </Box>
             )
           })}
         </Box>
@@ -124,23 +121,12 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const table = $.ui.resolve(e)
-    const { Box, Text, Button } = table
-
-    // Solid blocks: the used share in the pace's color, the rest faint.
-    const blocks = (pct: number, cells: number, tone: string) => {
-      const { filled, empty } = meterCells(pct, cells)
-      return (
-        <Text>
-          <Text color={tone}>{'█'.repeat(filled)}</Text>
-          <Text color="subtle">{'█'.repeat(empty)}</Text>
-        </Text>
-      )
-    }
+    const { Box, Text, Button } = $.ui.resolve(e)
     const list = await read($, windows)
     const dayMarks = await read($, marks)
     const now = await $.clock.now()
     const at = await read($, readAt)
+    const cols = e.props.bodyColumns ?? 50
 
     if (list.length === 0) {
       return (
@@ -149,24 +135,11 @@ export const register: Register = on => {
             No usage windows yet
           </Text>
           <Box marginTop={1}>
-            <Text dimColor>
-              They come with the next reply from the API. A session on an API key or a cloud provider reports none.
-            </Text>
+            <Text dimColor>They come with the next reply from the API. A session on an API key or a cloud provider reports none.</Text>
           </Box>
         </Box>
       )
     }
-
-    const bar = (w: Window, tone: string) =>
-      'Progress' in table ? (
-        <table.Progress label={titleOf(w.kind)} value={w.percentUsed} max={100} valueText={`${fmtPct(w.percentUsed)} used`} color={tone} />
-      ) : (
-        <Text>
-          <Text weight="semibold">{titleOf(w.kind)} </Text>
-          {blocks(w.percentUsed, 20, tone)}
-          <Text> {fmtPct(w.percentUsed)}</Text>
-        </Text>
-      )
 
     const tile = (k: string, value: string, caption: string, tone?: string) => (
       <Box key={k} flexDirection="column" flexGrow={1}>
@@ -188,48 +161,52 @@ export const register: Register = on => {
           <Button key="refresh" variant="secondary" label="Refresh" onPress={() => void refresh($)} />
         </Box>
         <Text size="caption" dimColor>
-          Read {at ? fmtWhen(at, now) : 'not yet'} · from the last reply's rate-limit headers
+          Read {at ? fmtWhen(at, now) : 'not yet'} · the mark on each bar is where an even pace would be now
         </Text>
 
         {list.map(w => {
           const p = paceOf(w, now)
-          const tone = toneOf(p)
+          const state = paceState(p)
+          const tone = THEME_TONE[state.tone]
           const mark = dayMarks[w.kind]
           const usedToday = mark && mark.day === dayOf(now) ? Math.max(0, w.percentUsed - mark.startPct) : null
           const isLong = p.perDay !== null
           const budget = isLong ? p.perDay : p.perHour
-          const verdict =
+          const gap =
             p.delta === null
               ? null
-              : Math.abs(p.delta) < 2
-                ? 'right on pace'
-                : p.delta < 0
-                  ? `${Math.round(-p.delta)} pts under an even pace`
-                  : `${Math.round(p.delta)} pts over an even pace`
+              : Math.abs(p.delta) <= 3
+                ? `An even pace would be at ${fmtPct(p.expected ?? 0)} by now.`
+                : `An even pace would be at ${fmtPct(p.expected ?? 0)} by now: you're ${Math.round(Math.abs(p.delta))} points ${p.delta < 0 ? 'under' : 'over'}.`
           return (
             <Box key={`win:${w.kind}`} flexDirection="column" marginTop={2}>
-              {bar(w, tone)}
+              <Box justifyContent="space-between" alignItems="center">
+                <Text weight="semibold">{titleOf(w.kind)}</Text>
+                <Box gap={1} alignItems="center">
+                  <Text weight="semibold">{fmtPct(p.used)}</Text>
+                  {chip($, e, state.label, state.tone)}
+                </Box>
+              </Box>
               <Box marginTop={1}>
+                {slimBar($, e, [{ share: p.used / 100, tone: state.tone }], p.expected === null ? null : p.expected / 100, {
+                  width: 360,
+                  cells: Math.max(20, Math.min(48, cols - 4)),
+                  key: `pbar:${w.kind}`,
+                })}
+              </Box>
+              <Box marginTop={1} flexDirection="column">
                 <Text dimColor>
                   {p.startsAt !== null ? `Started ${fmtWhen(p.startsAt, now)} · ` : ''}
                   {p.resetsAt !== null ? `resets ${fmtWhen(p.resetsAt, now)}` : 'no reset reported'}
                   {p.leftMs !== null ? ` (in ${fmtLeft(p.leftMs)})` : ''}
                 </Text>
+                {gap !== null && <Text dimColor>{gap}</Text>}
               </Box>
-              {p.expected !== null && (
-                <Text dimColor>
-                  An even pace would be at {fmtPct(p.expected)} by now:{' '}
-                  <Text color={tone}>{verdict}</Text>.
-                </Text>
-              )}
               <Box marginTop={1} gap={3}>
                 {budget !== null &&
-                  tile(
-                    `b:${w.kind}`,
-                    `${fmtPct(budget)}`,
-                    isLong ? 'per day to last until reset' : 'per hour to last until reset',
-                  )}
-                {isLong && usedToday !== null &&
+                  tile(`b:${w.kind}`, fmtPct(budget), isLong ? 'per day to last until reset' : 'per hour to last until reset')}
+                {isLong &&
+                  usedToday !== null &&
                   tile(
                     `t:${w.kind}`,
                     fmtPct(usedToday),
@@ -240,7 +217,7 @@ export const register: Register = on => {
                   `r:${w.kind}`,
                   p.runsOutAt !== null ? fmtWhen(p.runsOutAt, now) : 'Lasts',
                   p.runsOutAt !== null ? 'runs out at this pace' : 'to the reset at this pace',
-                  p.runsOutAt !== null ? 'error' : 'success',
+                  p.runsOutAt !== null ? 'error' : tone,
                 )}
               </Box>
             </Box>

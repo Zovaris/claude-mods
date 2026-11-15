@@ -173,3 +173,21 @@ export function parseDuration(text: string): number | null {
   if (!m || (!m[1] && !m[2])) return null
   return (Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)) * 60_000 || null
 }
+
+export type CacheState = { label: string; tone: 'success' | 'warning' | 'error' | 'muted' }
+
+/**
+ * The cache in a word, for the chip:
+ *   warm · expiring (inside the last minute of a 5m cache, five of a 1h one)
+ *   missed (the last request wrote what it should have read)
+ *   cold · compacted · not cached
+ */
+export function cacheState(v: View): CacheState {
+  if (v.kind === 'cold') return { label: 'cold', tone: 'error' }
+  if (v.kind === 'soon') return { label: 'expiring', tone: 'warning' }
+  if (v.kind === 'compacted') return { label: 'compacted', tone: 'muted' }
+  if (v.kind === 'uncached') return { label: 'not cached', tone: 'muted' }
+  if (v.kind === 'none') return { label: 'no requests', tone: 'muted' }
+  if (v.miss) return { label: 'missed', tone: 'error' }
+  return { label: 'warm', tone: 'success' }
+}

@@ -85,13 +85,29 @@ export function paceOf(w: Window, now: number): Pace {
   }
 }
 
-/** Green under pace, amber a little over, red well over or nearly full. */
-export function toneOf(p: Pace): 'success' | 'warning' | 'error' {
-  if (p.used >= 90) return 'error'
-  if (p.delta === null) return p.used >= 70 ? 'warning' : 'success'
-  if (p.delta > 15) return 'error'
-  if (p.delta > 3) return 'warning'
-  return 'success'
+export type PaceState = { label: string; tone: 'success' | 'warning' | 'error' | 'muted' }
+
+/**
+ * Where a window stands, in a few words:
+ *   limit reached · nearly full   (90%+, whatever the pace)
+ *   under pace · on pace          (within 3 points of an even pace, or below)
+ *   over pace · well over pace    (more than 3, more than 15 points above)
+ * A window with no reset reported has no pace: it reads by how full it is.
+ */
+export function paceState(p: Pace): PaceState {
+  if (p.used >= 100) return { label: 'limit reached', tone: 'error' }
+  if (p.used >= 90) return { label: 'nearly full', tone: 'error' }
+  if (p.delta === null) return p.used >= 70 ? { label: 'filling up', tone: 'warning' } : { label: 'no reset reported', tone: 'muted' }
+  if (p.delta < -3) return { label: 'under pace', tone: 'success' }
+  if (p.delta <= 3) return { label: 'on pace', tone: 'success' }
+  if (p.delta <= 15) return { label: 'over pace', tone: 'warning' }
+  return { label: 'well over pace', tone: 'error' }
+}
+
+/** The theme tone of a window: its state's. */
+export function toneOf(p: Pace): 'success' | 'warning' | 'error' | 'inactive' {
+  const t = paceState(p).tone
+  return t === 'muted' ? 'inactive' : t
 }
 
 /** The local calendar day of `ms`, as `YYYY-MM-DD`. */

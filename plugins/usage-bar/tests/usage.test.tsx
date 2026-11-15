@@ -54,6 +54,9 @@ test('the band and the pane draw every window, on the terminal and desktop', asy
       props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} },
     })
     expect(await band.find({ type: 'Text', text: /Fable week/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /under pace/ })).toBeDefined()
+    if (surface === 'terminal') expect(await band.find({ type: 'Text', text: /┃/ })).toBeDefined()
+    else expect(await band.find({ type: 'Svg' })).toBeDefined()
     await band.unmount()
 
     const pane = await $.ui.mount({

@@ -19,8 +19,8 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Ping, Sample } from '../types'
 import {
   accountOf,
-  bar,
   bar as textBar,
+  cacheState,
   costOf,
   decideTtl,
   fmtClock,
@@ -37,6 +37,7 @@ import {
   viewOf,
 } from './cache'
 import type { Account, CacheEnv, Ttl, View } from './cache'
+import { chip, slimBar, THEME_TONE } from './slim'
 
 const PANE = 'cache-control'
 const KEEP = 300
@@ -347,15 +348,10 @@ export const register: Register = (on, options) => {
     if (view.kind === 'none' || !view.last) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
 
-    const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
     const last = [...(await read($, samples))].reverse().find(x => !x.isPing) ?? view.last
     const hit = hitRatio(last)
-    // Ten cells split by share; any part that is there gets at least one.
     const total = Math.max(1, promptTokens(last))
-    const share = (n: number) => (n > 0 ? Math.max(1, Math.round((n / total) * 10)) : 0)
-    const cells = { read: share(last.read), write: share(last.write), fresh: share(last.fresh) }
-    cells.read = Math.max(0, 10 - cells.write - cells.fresh)
-    const word = { warm: 'warm', soon: 'expiring', cold: 'cold', compacted: 'compacted', uncached: 'uncached', none: '' }[view.kind]
+    const state = cacheState(view)
     const advice =
       view.kind === 'warm'
         ? view.miss
@@ -371,35 +367,42 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column">
-        <Box justifyContent="space-between">
-          <Text>
-            <Text color={color}>● cache </Text>
-            {/* The bar in three parts, the same colors as the numbers after it. */}
-            <Text color="success">{'█'.repeat(cells.read)}</Text>
-            <Text color="warning">{'█'.repeat(cells.write)}</Text>
-            <Text color="suggestion">{'█'.repeat(cells.fresh)}</Text>
-            <Text> {Math.round(hit * 100)}% </Text>
-            <Text dimColor> read </Text>
-            <Text color="success">{fmtTokens(last.read)}</Text>
-            <Text dimColor> · wrote </Text>
-            <Text color="warning">{fmtTokens(last.write)}</Text>
-            <Text dimColor> · new </Text>
-            <Text color="suggestion">{fmtTokens(last.fresh)}</Text>
-            {view.leftMs > 0 && <Text color={color}> ⏱ {fmtClock(view.leftMs)}</Text>}
-            <Text dimColor> {ttl}</Text>
-            {warm > now && <Text color="warning"> ♨ {fmtClock(warm - now)}</Text>}
-          </Text>
+        <Box justifyContent="space-between" alignItems="center">
+          <Box gap={1} alignItems="center">
+            <Text dimColor>Cache</Text>
+            {slimBar(
+              $,
+              e,
+              [
+                { share: last.read / total, tone: 'success' },
+                { share: last.write / total, tone: 'warning' },
+                { share: last.fresh / total, tone: 'cool' },
+              ],
+              null,
+              { width: 96, cells: 10, key: 'bar:cache' },
+            )}
+            <Text>{Math.round(hit * 100)}%</Text>
+            {chip($, e, state.label, state.tone)}
+            {view.leftMs > 0 && <Text dimColor>{fmtClock(view.leftMs)} of {ttl}</Text>}
+            {warm > now && chip($, e, `kept warm ${fmtClock(warm - now)}`, 'cool')}
+            <Text>
+              <Text dimColor>  read </Text>
+              <Text color="success">{fmtTokens(last.read)}</Text>
+              <Text dimColor> · wrote </Text>
+              <Text color="warning">{fmtTokens(last.write)}</Text>
+              <Text dimColor> · new </Text>
+              <Text color="suggestion">{fmtTokens(last.fresh)}</Text>
+            </Text>
+          </Box>
           <Button key="details" plain dimColor label="Details" onPress={() => void $.ui.open({ id: PANE, title: 'Cache' })} />
         </Box>
         <Text dimColor={view.kind === 'warm' && !view.miss} color={view.kind === 'cold' || view.miss ? 'error' : undefined}>
-          {word}: {advice}
+          {advice}
         </Text>
       </Box>
     )
   })
 
-  // The pane: one status block, four stat tiles, then sections. Desktop draws
-  // real progress bars and chip buttons; the terminal gets text bars instead.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const table = $.ui.resolve(e)
     const { Box, Text, Button } = table
@@ -488,16 +491,30 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" paddingX={1}>
         {/* Status */}
         <Box flexDirection="column">
-          <Text size="heading" weight="semibold">
-            <Text color={color}>● </Text>
-            {title}
-          </Text>
+          <Box justifyContent="space-between" alignItems="center">
+            <Text size="heading" weight="semibold">
+              {title}
+            </Text>
+            {chip($, e, cacheState(view).label, cacheState(view).tone)}
+          </Box>
           <Text size="caption" dimColor>
             {subtitle}
           </Text>
         </Box>
         {view.leftMs > 0 && (
-          <Box marginTop={2}>{bar('Expires in', view.leftMs / ttlMs(ttl), fmtClock(view.leftMs), color)}</Box>
+          <Box marginTop={2} flexDirection="column">
+            <Box justifyContent="space-between">
+              <Text dimColor>Expires in</Text>
+              <Text color={color}>{fmtClock(view.leftMs)}</Text>
+            </Box>
+            <Box marginTop={1}>
+              {slimBar($, e, [{ share: view.leftMs / ttlMs(ttl), tone: cacheState(view).tone }], null, {
+                width: 360,
+                cells: Math.max(20, Math.min(48, cols - 4)),
+                key: 'bar:life',
+              })}
+            </Box>
+          </Box>
         )}
 
         {/* Tiles */}
@@ -514,12 +531,27 @@ export const register: Register = (on, options) => {
         {view.last && !view.last.isPing && (
           <Box flexDirection="column">
             {heading('Last request', view.miss ? `missed: ${view.miss}` : `${Math.round(hitRatio(view.last) * 100)}% hit`)}
-            {bar(
-              'Read from cache',
-              hitRatio(view.last),
-              `${fmtTokens(view.last.read)} read · ${fmtTokens(view.last.write)} written · ${fmtTokens(view.last.fresh)} new`,
-              view.miss ? 'error' : 'success',
+            {slimBar(
+              $,
+              e,
+              [
+                { share: view.last.read / Math.max(1, promptTokens(view.last)), tone: 'success' },
+                { share: view.last.write / Math.max(1, promptTokens(view.last)), tone: 'warning' },
+                { share: view.last.fresh / Math.max(1, promptTokens(view.last)), tone: 'cool' },
+              ],
+              null,
+              { width: 360, cells: Math.max(20, Math.min(48, cols - 4)), key: 'bar:last' },
             )}
+            <Box marginTop={1}>
+              <Text>
+                <Text color="success">{fmtTokens(view.last.read)}</Text>
+                <Text dimColor> read · </Text>
+                <Text color="warning">{fmtTokens(view.last.write)}</Text>
+                <Text dimColor> written · </Text>
+                <Text color="suggestion">{fmtTokens(view.last.fresh)}</Text>
+                <Text dimColor> new</Text>
+              </Text>
+            </Box>
           </Box>
         )}
 
