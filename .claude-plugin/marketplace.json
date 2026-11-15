@@ -1,49 +1,89 @@
 {
   "name": "claude-mods",
   "description": "Claude Code mods: tool and connector switches, prompt-cache, usage and context meters, a mod manager, and looks for the desktop app",
-  "owner": { "name": "Bryan Villafuerte" },
+  "owner": {
+    "name": "Bryan Villafuerte"
+  },
   "plugins": [
     {
       "name": "tool-toggle",
       "source": "./mods/tool-toggle",
       "description": "Turn connectors, MCP servers, single tools and skills on and off",
       "category": "productivity",
-      "keywords": ["mod", "tools", "mcp", "connectors", "skills"]
+      "keywords": [
+        "mod",
+        "tools",
+        "mcp",
+        "connectors",
+        "skills"
+      ]
     },
     {
       "name": "cache-control",
       "source": "./mods/cache-control",
       "description": "Prompt-cache meter with cold-send cost, confirmation and keep-warm",
       "category": "productivity",
-      "keywords": ["mod", "prompt-caching", "cost"]
+      "keywords": [
+        "mod",
+        "prompt-caching",
+        "cost"
+      ]
     },
     {
       "name": "usage-bar",
       "source": "./mods/usage-bar",
       "description": "Plan usage windows with pace and a daily budget",
       "category": "productivity",
-      "keywords": ["mod", "usage", "rate-limits"]
+      "keywords": [
+        "mod",
+        "usage",
+        "rate-limits"
+      ]
     },
     {
       "name": "context-meter",
       "source": "./mods/context-meter",
       "description": "What fills the context window, with your own auto-compact threshold and summary style",
       "category": "productivity",
-      "keywords": ["mod", "context", "compact"]
+      "keywords": [
+        "mod",
+        "context",
+        "compact"
+      ]
     },
     {
       "name": "mod-manager",
       "source": "./mods/mod-manager",
       "description": "/mods: turn mods, themes and plugins on and off, update and install them",
       "category": "productivity",
-      "keywords": ["mod", "plugins", "manager"]
+      "keywords": [
+        "mod",
+        "plugins",
+        "manager"
+      ]
     },
     {
       "name": "nebula",
       "source": "./themes/nebula",
-      "description": "A soft space look for the desktop app, light and dark",
+      "description": "A space look for light and dark, with a violet and rose nebula",
       "category": "theme",
-      "keywords": ["theme", "look", "space"]
+      "keywords": [
+        "theme",
+        "look",
+        "space"
+      ]
+    },
+    {
+      "name": "dunes",
+      "source": "./themes/dunes",
+      "description": "A red desert drawn in ASCII, dusk in dark mode and noon in light",
+      "category": "theme",
+      "keywords": [
+        "theme",
+        "look",
+        "desert",
+        "ascii"
+      ]
     }
   ]
 }

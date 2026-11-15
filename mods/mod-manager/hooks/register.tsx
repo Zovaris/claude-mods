@@ -143,6 +143,19 @@ async function run($: EngineInterface, label: string, args: string[]) {
   }
 }
 
+/**
+ * Turns a mod or theme on or off, or installs it. Only one look draws at a time
+ * (the last one set wins), so turning a theme on turns the other themes off.
+ */
+async function choose($: EngineInterface, x: Entry, verb: 'enable' | 'disable' | 'install') {
+  if (verb !== 'disable' && x.kind === 'theme') {
+    const others = (await read($, entries)).filter(o => o.kind === 'theme' && o.installed && o.enabled && o.id !== x.id)
+    for (const o of others) await run($, `Turning ${o.name} off…`, ['plugin', 'disable', o.id])
+  }
+  const label = verb === 'enable' ? 'Enabling' : verb === 'disable' ? 'Disabling' : 'Installing'
+  await run($, `${label} ${x.name}…`, ['plugin', verb, x.id])
+}
+
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: 'Mods' })
 
 export const register: Register = on => {
@@ -203,10 +216,10 @@ export const register: Register = on => {
                   plain
                   dimColor
                   label={x.enabled ? 'Disable' : 'Enable'}
-                  onPress={() => void run($, `${x.enabled ? 'Disabling' : 'Enabling'} ${x.name}…`, ['plugin', x.enabled ? 'disable' : 'enable', x.id])}
+                  onPress={() => void choose($, x, x.enabled ? 'disable' : 'enable')}
                 />
               ) : (
-                <Button key={`install:${x.id}`} label="Install" onPress={() => void run($, `Installing ${x.name}…`, ['plugin', 'install', x.id])} />
+                <Button key={`install:${x.id}`} label="Install" onPress={() => void choose($, x, 'install')} />
               )}
             </Box>
           </Box>

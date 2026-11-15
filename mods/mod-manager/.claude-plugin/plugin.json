@@ -1,6 +1,6 @@
 {
   "name": "mod-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "/mods: see every installed mod, theme and plugin, turn them on and off, update them, and install what your marketplaces offer",
   "license": "MIT",
   "types": "./types/index.d.ts"

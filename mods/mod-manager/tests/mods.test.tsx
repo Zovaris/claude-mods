@@ -19,20 +19,24 @@ const FILES: Record<string, unknown> = {
     plugins: {
       'usage-bar@claude-mods': [{ scope: 'user', installPath: `${H}/cache/usage-bar/0.4.0`, version: '0.4.0' }],
       'nebula@claude-mods': [{ scope: 'user', installPath: `${H}/cache/nebula/0.2.0`, version: '0.2.0' }],
+      'dunes@claude-mods': [{ scope: 'user', installPath: `${H}/cache/dunes/0.1.0`, version: '0.1.0' }],
     },
   },
-  [`${H}/.claude/settings.json`]: { enabledPlugins: { 'usage-bar@claude-mods': true, 'nebula@claude-mods': false } },
+  [`${H}/.claude/settings.json`]: { enabledPlugins: { 'usage-bar@claude-mods': true, 'nebula@claude-mods': false, 'dunes@claude-mods': true } },
   [`${H}/.claude/plugins/known_marketplaces.json`]: { 'claude-mods': { installLocation: MK } },
   [`${MK}/.claude-plugin/marketplace.json`]: {
     plugins: [
       { name: 'usage-bar', source: './mods/usage-bar', category: 'productivity' },
       { name: 'nebula', source: './themes/nebula', category: 'theme' },
+      { name: 'dunes', source: './themes/dunes', category: 'theme' },
       { name: 'context-meter', source: './mods/context-meter', category: 'productivity', description: 'What fills the window' },
     ],
   },
   [`${MK}/mods/usage-bar/.claude-plugin/plugin.json`]: { version: '0.5.0' },
   [`${MK}/mods/usage-bar/hooks/hooks.json`]: { modules: ['./register.tsx'] },
   [`${MK}/themes/nebula/.claude-plugin/plugin.json`]: { version: '0.2.0' },
+  [`${MK}/themes/dunes/.claude-plugin/plugin.json`]: { version: '0.1.0' },
+  [`${H}/cache/dunes/0.1.0/.claude-plugin/plugin.json`]: { version: '0.1.0', description: 'A red desert' },
   [`${MK}/mods/context-meter/.claude-plugin/plugin.json`]: { version: '0.1.0' },
   [`${MK}/mods/context-meter/hooks/hooks.json`]: { modules: ['./register.tsx'] },
   [`${H}/cache/usage-bar/0.4.0/.claude-plugin/plugin.json`]: { version: '0.4.0', description: 'Usage windows' },
@@ -74,7 +78,7 @@ test('lists mods, themes and what is available, and updates through the claude c
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     const drawn = JSON.stringify(await ui.drawn())
-    expect(drawn).toContain('2 installed')
+    expect(drawn).toContain('3 installed')
     expect(drawn).toContain('1 update')
     expect(drawn).toContain('Themes')
     expect(await ui.find({ key: 'update:usage-bar@claude-mods' })).toBeDefined()
@@ -86,5 +90,17 @@ test('lists mods, themes and what is available, and updates through the claude c
   await ui.press({ key: 'update:usage-bar@claude-mods' })
   expect(ran.some(a => a.join(' ') === '/usr/local/bin/claude plugin update usage-bar@claude-mods')).toBe(true)
   expect(await ui.find({ key: 'reload' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('turning a theme on turns the other themes off first', async ($, on) => {
+  const ran: string[][] = []
+  engine(on, ran)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mods', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'switch:nebula@claude-mods' })
+  const cmds = ran.filter(a => a[1] === 'plugin').map(a => a.slice(1).join(' '))
+  expect(cmds).toEqual(['plugin disable dunes@claude-mods', 'plugin enable nebula@claude-mods'])
   await ui.unmount()
 })

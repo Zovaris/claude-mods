@@ -8,7 +8,7 @@ Mods and themes for [Claude Code](https://code.claude.com). The mods add feature
 - [Update and uninstall](#update-and-uninstall)
 - [Where each one works](#where-each-one-works)
 - [Mods](#mods): [tool-toggle](#tool-toggle) · [cache-control](#cache-control) · [usage-bar](#usage-bar) · [context-meter](#context-meter) · [mod-manager](#mod-manager)
-- [Themes](#themes): [nebula](#nebula)
+- [Themes](#themes): [nebula](#nebula), [dunes](#dunes)
 - [Development](#development)
 - [License](#license)
 
@@ -21,7 +21,8 @@ Mods and themes for [Claude Code](https://code.claude.com). The mods add feature
 | Mod | [usage-bar](mods/usage-bar) | Your 5-hour, weekly and model usage windows, with pace and a daily budget | `/limits` |
 | Mod | [context-meter](mods/context-meter) | What fills the context window, your own auto-compact threshold and summary style | `/context-meter` |
 | Mod | [mod-manager](mods/mod-manager) | Every installed mod, theme and plugin: on, off, update, install | `/mods` |
-| Theme | [nebula](themes/nebula) | A soft space look for light and dark, with a nebula behind the conversation | `/nebula` |
+| Theme | [nebula](themes/nebula) | A space look for light and dark, with a violet and rose nebula behind the conversation | `/nebula` |
+| Theme | [dunes](themes/dunes) | A red desert drawn in ASCII, dusk in dark mode and noon in light | `/dunes` |
 
 Mods live in [`mods/`](mods) and themes in [`themes/`](themes). Install only what you want: each one is its own plugin.
 
@@ -67,6 +68,10 @@ claude plugin install mod-manager@claude-mods
 claude plugin install nebula@claude-mods
 ```
 
+```bash
+claude plugin install dunes@claude-mods
+```
+
 ### From inside a session
 
 At the prompt, the same in one line each (answer `y` to add the marketplace, then pick a scope):
@@ -78,6 +83,7 @@ At the prompt, the same in one line each (answer `y` to add the marketplace, the
 /plugin install context-meter --marketplace sthbryan/claude-mods
 /plugin install mod-manager --marketplace sthbryan/claude-mods
 /plugin install nebula --marketplace sthbryan/claude-mods
+/plugin install dunes --marketplace sthbryan/claude-mods
 ```
 
 ### In the desktop app
@@ -114,6 +120,7 @@ claude plugin uninstall nebula@claude-mods
 | context-meter | ✓ | ✓ | Same. |
 | mod-manager | ✓ | ✓ | Runs the `claude` command: from your PATH, or the desktop app's own copy on macOS. |
 | nebula | — | ✓ | Themes are drawn by the desktop and mobile apps only. |
+| dunes | — | ✓ | Same. |
 
 The mobile app and VS Code haven't been tested.
 
@@ -221,22 +228,33 @@ The breakdown is the one `/context` draws, estimated locally after each turn (no
 - **Enable** or **Disable** any of them.
 - **Update** when the marketplace has a newer version; **Check for updates** pulls your marketplaces first.
 - **Install** from the **Available** section.
+- Themes are one at a time: turning one on turns the others off.
 - After a change, **Reload plugins** loads it in the current session.
 
 It reads Claude Code's own files and writes none: every change goes through the `claude plugin` command. If it can't find the command, the command is copied to your clipboard to run yourself.
 
 ## Themes
 
-Only one theme can be active at a time: the last one set wins. Turn a theme off with its own command.
+Only one theme can be active at a time: the last one set wins. Turn a theme off with its own command, or switch from `/mods`, which turns the others off for you.
 
 ### nebula
 
 A look for the desktop and mobile apps, in light and dark.
 
 - **Colors.** Violet-black grays with an orchid accent. Mint, amber, coral and rose keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so surfaces, borders and code all follow.
-- **Scene.** A band of nebula gas across the right side, made of fractal noise tinted lilac, rose and a warm peach core with dark dust lanes, and clean round stars, thick along the band and sparse elsewhere. The middle stays clear for the conversation. A few stars twinkle, and motion stops under reduced motion.
+- **Scene.** A nebula sweeping in from the top-right corner: soft violet, magenta and rose clouds around a warm core, torn into wisps by fractal noise and cut by dark dust lanes. Stars follow a real sky's spread, a fine dust of faint points, fewer mid ones and a dozen bright ones in warm whites, thicker in the cloud. No halos, no crosses, no blue. Light mode keeps the cloud as a pale watercolor. The middle stays clear for the conversation; a few stars twinkle, and motion stops under reduced motion.
 
 `/nebula off` and `/nebula on` switch it, and the choice is kept.
+
+### dunes
+
+A red desert drawn in ASCII, for the desktop and mobile apps, in light and dark.
+
+- **Colors.** Rust-black grays with a vermilion accent. Danger leans crimson so it stays apart from the accent; sage, amber and rose keep their meaning.
+- **Scene.** Three ranges of dunes on a 160 × 60 character grid, each shaded the way sand is lit by a low sun on the right: faces toward it dense and bright (`=+*#%`), backs sparse and dark (`.:-`), the light and shade meeting in diagonals down from each crest, the near ranges rippled by the wind. The sky is an ordered dither of dots that thickens toward the horizon and the sun, a disk of `@` sinking behind the far range. Dark mode is dusk with a few stars; light mode is noon, the same desert printed in terracotta on sand. Sand blows across the ridges, and motion stops under reduced motion.
+- **Any font.** Each run of characters is stretched to its cells, so the grid stays aligned in whatever monospace font the app has.
+
+`/dunes off` and `/dunes on` switch it, and the choice is kept.
 
 ## Development
 

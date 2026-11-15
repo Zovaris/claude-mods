@@ -16,7 +16,7 @@ const SVG = sceneSvg()
 
 
 // No tint: the glass follows each mode's own panel color.
-const LOOK: ThemeSetArgs = { colors: theme, backdrop: { scene: SCENE, glass: { blur: 24, opacity: 0.72 } } }
+const LOOK: ThemeSetArgs = { colors: theme, backdrop: { scene: SCENE, glass: { blur: 20, opacity: 0.6 } } }
 
 const apply = async ($: EngineInterface) => {
   const unpainted = problems.find(line => line.startsWith("Desktop won't paint"))
@@ -55,6 +55,6 @@ export const register: Register = on => {
     if (e.props.plugin !== $.plugin.name || e.props.scene !== SCENE) return next(e)
     if (e.surface !== 'desktop' && e.surface !== 'mobile') return next(e)
     const { Svg } = $.ui.resolve(e)
-    return <Svg source={SVG} alt="A band of lilac and rose nebula gas with stars" isInteractive />
+    return <Svg source={SVG} alt="A violet and rose nebula torn into wisps, with stars" isInteractive />
   })
 }
