@@ -337,7 +337,7 @@ export const register: Register = on => {
             </Box>
           </Box>
           {isOpen && (
-            <Box key={`sb:${key}`} flexDirection="column" borderStyle="round" borderDimColor marginTop={1}>
+            <Box key={`sb:${key}`} flexDirection="column" marginTop={1}>
               {isBuiltin ? list.flatMap(g => g.tools.map(t => toolRow(g, t, t.name, 1))) : list.map(groupRow)}
             </Box>
           )}
@@ -382,7 +382,7 @@ export const register: Register = on => {
         </Box>
         {gs.length === 0 && <Text dimColor>Loading…</Text>}
         {q ? (
-          <Box key="results" flexDirection="column" marginTop={1} borderStyle="round" borderDimColor>
+          <Box key="results" flexDirection="column" marginTop={1}>
             {results.length === 0 && (
               <Box paddingX={1}>
                 <Text dimColor size="footnote">
