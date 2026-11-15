@@ -128,9 +128,44 @@ export function slimBar(
   )
 }
 
-/** A small state chip: the label on a soft wash of its tone. */
+/** Chip text colors: lighter on dark, deeper on light. */
+const CHIP_TEXT: Record<Tone, { dark: string; light: string }> = {
+  success: { dark: '#7cd4a8', light: '#2f8a62' },
+  warning: { dark: '#f0c070', light: '#9a6614' },
+  error: { dark: '#f28b94', light: '#c2414e' },
+  cool: { dark: '#b1a9f2', light: '#5d52c9' },
+  muted: { dark: '#a6a1b3', light: '#6e6979' },
+}
+
+const escapeXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** A rounded pill as SVG markup, sized to its label. */
+export function chipSvg(label: string, tone: Tone): { source: string; width: number; height: number } {
+  const height = 18
+  const width = Math.round(label.length * 6.3 + 16)
+  const c = CHIP_TEXT[tone]
+  const source =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<style>.t{fill:${c.dark};font:500 11px -apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif}` +
+    `@media (prefers-color-scheme:light){.t{fill:${c.light}}}</style>` +
+    `<rect width="${width}" height="${height}" rx="${height / 2}" fill="${CHIP_BG[tone]}"/>` +
+    `<text class="t" x="${width / 2}" y="12.5" text-anchor="middle">${escapeXml(label)}</text>` +
+    `</svg>`
+  return { source, width, height }
+}
+
+/**
+ * A small state chip: a rounded pill where the surface draws SVG, else the
+ * label on a soft wash of its tone (the terminal, square by nature).
+ */
 export function chip($: EngineInterface, e: RenderInput, label: string, tone: Tone) {
-  const { Text } = $.ui.resolve(e)
+  const table = $.ui.resolve(e)
+  if ('Svg' in table && (e.surface === 'desktop' || e.surface === 'mobile')) {
+    const { Svg } = table
+    const pill = chipSvg(label, tone)
+    return <Svg key={`chip:${label}`} source={pill.source} alt={label} width={pill.width} height={pill.height} />
+  }
+  const { Text } = table
   return (
     <Text color={THEME_TONE[tone]} backgroundColor={CHIP_BG[tone]} size="caption">
       {` ${label} `}
