@@ -105,7 +105,7 @@ test('the band and the pane draw on the terminal and desktop', async ($, on) => 
       surface,
       props: { title: 'Cache', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
     })
-    expect(await pane.find({ type: 'Text', text: 'Context' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: 'context' })).toBeDefined()
     expect(await pane.find({ key: 'guard' })).toBeDefined()
     await pane.unmount()
   }

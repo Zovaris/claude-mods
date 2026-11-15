@@ -219,9 +219,9 @@ export const register: Register = on => {
   })
 
 
-  // The pane. Desktop draws every Button as its own native control and drops
-  // styling inside it, so state is shown beside the buttons, never in them:
-  // a colored dot, the name as the expander, and a plain action on the right.
+  // The pane. Desktop draws a Button as its own native control (a chip, or
+  // plain text when `plain`) and drops styling inside it, so state lives
+  // beside the buttons: a dot in a fixed column, the name, then the action.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input } = $.ui.resolve(e)
     const off = await read($, disabled)
@@ -230,9 +230,12 @@ export const register: Register = on => {
     const q = (await read($, query)).trim().toLowerCase()
     const gs = groupsOf(await read($, tools), await read($, servers))
 
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
     const toggleOpen = (k: string) => void update($, expanded, ex => (ex.includes(k) ? ex.filter(x => x !== k) : [...ex, k]))
-    const dot = (isOn: boolean, isWarn = false) => (
-      <Text color={isWarn ? 'warning' : isOn ? 'success' : 'inactive'}>{isOn || isWarn ? '●' : '○'}</Text>
+    const dot = (tone: 'on' | 'off' | 'warn') => (
+      <Box width={2}>
+        <Text color={tone === 'on' ? 'success' : tone === 'warn' ? 'warning' : 'inactive'}>●</Text>
+      </Box>
     )
 
     const flipTool = (g: Group, t: ToolEntry) =>
@@ -250,59 +253,64 @@ export const register: Register = on => {
       const isOn = isGroupOn(g, off) && !off.includes(t.name)
       return (
         <Box key={`row:${t.name}`} justifyContent="space-between" alignItems="center" paddingLeft={indent} paddingRight={1} hover={{ backgroundColor: 'subtle' }}>
-          <Box gap={1} alignItems="center">
-            {dot(isOn)}
+          <Box alignItems="center">
+            {dot(isOn ? 'on' : 'off')}
             <Text mono size="footnote" dimColor={!isOn}>
               {label}
             </Text>
           </Box>
-          <Button key={`tool:${t.name}`} plain dimColor={isOn} label={isOn ? 'Block' : 'Allow'} onPress={() => flipTool(g, t)} />
+          <Button key={`tool:${t.name}`} plain dimColor label={isOn ? 'Block' : 'Allow'} onPress={() => flipTool(g, t)} />
         </Box>
       )
-    }
-
-    const detailOf = (g: Group, isOn: boolean) => {
-      const status = g.connector?.status
-      if (status === 'needs_auth') return 'needs sign-in'
-      if (status === 'failed') return 'failed to connect'
-      if (busy.includes(g.prefix)) return 'switching…'
-      if (!isOn) return g.connector ? 'off for this session' : 'blocked'
-      if (g.tools.length === 0) return 'connecting…'
-      const blocked = g.tools.filter(t => off.includes(t.name)).length
-      return `${g.tools.length} tools${blocked ? ` · ${blocked} blocked` : ''}`
     }
 
     const groupRow = (g: Group) => {
       const k = g.prefix || 'builtin'
       const isOpen = open.includes(k)
       const isOn = isGroupOn(g, off)
-      const isWarn = g.connector?.status === 'needs_auth' || g.connector?.status === 'failed'
-      const canOpen = g.tools.length > 0
+      const status = g.connector?.status
+      const isWarn = status === 'needs_auth' || status === 'failed'
+      const blocked = g.tools.filter(t => off.includes(t.name)).length
+      const note = isWarn
+        ? status === 'needs_auth'
+          ? 'Needs sign-in'
+          : 'Failed to connect'
+        : busy.includes(g.prefix)
+          ? 'Switching…'
+          : !isOn
+            ? 'Off'
+            : g.tools.length === 0
+              ? 'Connecting…'
+              : null
       return (
         <Box key={`g:${k}`} flexDirection="column">
           <Box key={`gh:${k}`} justifyContent="space-between" alignItems="center" paddingX={1} hover={{ backgroundColor: 'subtle' }}>
-            <Box gap={1} alignItems="center">
-              {dot(isOn, isWarn)}
-              {canOpen ? (
-                <Button key={`exp:${k}`} plain label={`${g.name} ${isOpen ? '▾' : '▸'}`} onPress={() => toggleOpen(k)} />
+            <Box alignItems="center">
+              {dot(isWarn ? 'warn' : isOn ? 'on' : 'off')}
+              <Box width={18}>
+                <Text weight="medium" dimColor={!isOn}>
+                  {g.name}
+                </Text>
+              </Box>
+              {note !== null ? (
+                <Text size="caption" dimColor>
+                  {note}
+                </Text>
               ) : (
-                <Text dimColor={!isOn}>{g.name}</Text>
+                <Button
+                  key={`exp:${k}`}
+                  plain
+                  dimColor
+                  label={`${plural(g.tools.length, 'tool')}${blocked ? `, ${blocked} blocked` : ''} ${isOpen ? '▾' : '▸'}`}
+                  onPress={() => toggleOpen(k)}
+                />
               )}
-              <Text dimColor size="caption">
-                {detailOf(g, isOn)}
-              </Text>
             </Box>
             {!LOCKED.has(g.prefix) && (
-              <Button
-                key={`srv:${g.prefix}`}
-                plain
-                dimColor={isOn}
-                label={isOn ? 'Turn off' : 'Turn on'}
-                onPress={() => void setGroup($, g, !isOn)}
-              />
+              <Button key={`srv:${g.prefix}`} label={isOn ? 'Disable' : 'Enable'} onPress={() => void setGroup($, g, !isOn)} />
             )}
           </Box>
-          {isOpen && g.tools.map(t => toolRow(g, t, shortName(t), 4))}
+          {isOpen && isOn && g.tools.map(t => toolRow(g, t, shortName(t), 3))}
         </Box>
       )
     }
@@ -318,17 +326,18 @@ export const register: Register = on => {
       return (
         <Box key={`s:${key}`} flexDirection="column" marginTop={1}>
           <Box key={`sh:${key}`} justifyContent="space-between" alignItems="center" paddingX={1}>
-            {isCollapsible ? (
-              <Button key={`section:${key}`} plain label={`${title} ${isOpen ? '▾' : '▸'}`} onPress={() => toggleOpen(`section:${key}`)} />
-            ) : (
-              <Text weight="semibold">{title}</Text>
-            )}
-            <Text dimColor size="caption">
-              {onCount} of {total} on
-            </Text>
+            <Text weight="semibold">{title}</Text>
+            <Box gap={2} alignItems="center">
+              <Text size="caption" dimColor>
+                {onCount} of {total} on
+              </Text>
+              {isCollapsible && (
+                <Button key={`section:${key}`} plain dimColor label={isOpen ? 'Hide' : 'Show'} onPress={() => toggleOpen(`section:${key}`)} />
+              )}
+            </Box>
           </Box>
           {isOpen && (
-            <Box key={`sb:${key}`} flexDirection="column" borderStyle="round" borderDimColor>
+            <Box key={`sb:${key}`} flexDirection="column" borderStyle="round" borderDimColor marginTop={1}>
               {isBuiltin ? list.flatMap(g => g.tools.map(t => toolRow(g, t, t.name, 1))) : list.map(groupRow)}
             </Box>
           )}
@@ -344,27 +353,28 @@ export const register: Register = on => {
     const connectors = gs.filter(g => g.section === 'connector')
     const onConnectors = connectors.filter(g => isGroupOn(g, off)).length
     const blockedTools = off.filter(x => !x.startsWith('mcp:')).length
+    const totalTools = gs.reduce((a, g) => a + (isGroupOn(g, off) ? g.tools.filter(t => !off.includes(t.name)).length : 0), 0)
 
     return (
       <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between" alignItems="center">
           <Box flexDirection="column">
-            <Text weight="semibold" size="heading">
+            <Text size="heading" weight="semibold">
               {onConnectors} of {connectors.length} connectors on
             </Text>
-            <Text dimColor size="caption">
-              {blockedTools ? `${blockedTools} tool${blockedTools === 1 ? '' : 's'} blocked` : 'No single tools blocked'}
+            <Text size="caption" dimColor>
+              {totalTools} tools available{blockedTools ? ` · ${plural(blockedTools, 'tool')} blocked` : ''}
             </Text>
           </Box>
-          <Box gap={2}>
-            {off.length > 0 && <Button key="all-on" plain dimColor label="Unblock all" onPress={() => void save($, () => [])} />}
-            <Button key="refresh" plain dimColor label="Refresh" onPress={() => void refresh($)} />
+          <Box gap={1}>
+            {off.length > 0 && <Button key="all-on" variant="secondary" label="Unblock all" onPress={() => void save($, () => [])} />}
+            <Button key="refresh" variant="secondary" label="Refresh" onPress={() => void refresh($)} />
           </Box>
         </Box>
         <Box marginTop={1} flexDirection="column">
           <Input
             key="q"
-            placeholder="Search tools and connectors"
+            placeholder="Search"
             value={q}
             onInput={v => void update($, query, () => v)}
             onSubmit={v => void update($, query, () => v)}

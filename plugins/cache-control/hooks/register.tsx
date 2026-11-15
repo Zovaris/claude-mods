@@ -20,6 +20,7 @@ import type { Ping, Sample } from '../types'
 import {
   accountOf,
   bar,
+  bar as textBar,
   costOf,
   decideTtl,
   fmtClock,
@@ -387,13 +388,16 @@ export const register: Register = (on, options) => {
     )
   })
 
+  // The pane: one status block, four stat tiles, then sections. Desktop draws
+  // real progress bars and chip buttons; the terminal gets text bars instead.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box, Text, Button } = table
     const s = await snapshot($)
     const { view, ttl, warm, now, list } = s
     const isGuarded = await read($, guard)
     const ping: Ping | null = await read($, lastPing)
-    const width = Math.max(10, Math.min(40, (e.props.bodyColumns ?? 50) - 12))
+    const cols = e.props.bodyColumns ?? 50
 
     const turns = list.filter(x => !x.isPing)
     const pings = list.filter(x => x.isPing)
@@ -407,127 +411,147 @@ export const register: Register = (on, options) => {
       fresh: 0,
     })
     const totalPrompt = tot.read + tot.write + tot.fresh
+    const sessionHit = totalPrompt ? tot.read / totalPrompt : 0
+    const missed = turns.filter((x, i) => i > 0 && missReason(turns[i - 1], x, ttl) !== undefined)
 
     const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
-    const title = {
-      warm: 'Warm',
-      soon: 'Expiring soon',
-      cold: 'Cold',
-      compacted: 'Compacted',
-      uncached: 'Not cached',
-      none: 'No requests yet',
-    }[view.kind]
-    const life = view.leftMs / ttlMs(ttl)
-    const table = $.ui.resolve(e)
-    // Requests that wrote the cache instead of reading it, and what that cost.
-    const missed = turns.filter((x, i) => i > 0 && missReason(turns[i - 1], x, ttl) !== undefined)
-    const misses = missed.length
-    const missCost = missed.reduce((a, x) => {
-      const c = sendCost(x.model, x.write, ttl)
-      return a + (c?.cold ?? 0)
-    }, 0)
+    const title = { warm: 'Warm', soon: 'Expiring soon', cold: 'Cold', compacted: 'Compacted', uncached: 'Not cached', none: 'No requests yet' }[
+      view.kind
+    ]
+    const subtitle =
+      view.kind === 'cold'
+        ? `The next message rewrites ${fmtTokens(view.tokens)} tokens`
+        : view.kind === 'soon'
+          ? 'Send anything to renew it for free'
+          : view.kind === 'compacted'
+            ? 'The next message starts from the summary'
+            : view.kind === 'none'
+              ? 'The first request writes the cache'
+              : `${ttl} cache · ${s.ttlSource}`
+
+    const bar = (label: string, value: number, valueText: string, fill: string) =>
+      'Progress' in table ? (
+        <table.Progress label={label} value={value} valueText={valueText} color={fill} />
+      ) : (
+        <Text>
+          <Text dimColor>{label} </Text>
+          <Text color={fill}>{textBar(value, Math.max(10, Math.min(30, cols - label.length - valueText.length - 4)))}</Text>
+          <Text dimColor> {valueText}</Text>
+        </Text>
+      )
+
+    const tile = (k: string, value: string, caption: string, tone?: string) => (
+      <Box key={`tile:${k}`} flexDirection="column" flexGrow={1}>
+        <Text size="title" weight="semibold" color={tone}>
+          {value}
+        </Text>
+        <Text size="caption" dimColor>
+          {caption}
+        </Text>
+      </Box>
+    )
+
+    const heading = (text: string, aside?: string) => (
+      <Box justifyContent="space-between" marginTop={1}>
+        <Text weight="semibold">{text}</Text>
+        {aside !== undefined && (
+          <Text size="caption" dimColor>
+            {aside}
+          </Text>
+        )}
+      </Box>
+    )
 
     // One row per turn, newest first.
     const byTurn = new Map<string, Sample[]>()
     for (const x of turns) byTurn.set(x.turnId, [...(byTurn.get(x.turnId) ?? []), x])
-    const rows = [...byTurn.entries()].slice(-12).reverse()
+    const rows = [...byTurn.entries()].slice(-8).reverse()
+    const cell = (w: number, text: string, opts: { dim?: boolean; color?: string; right?: boolean } = {}) => (
+      <Box width={w} justifyContent={opts.right ? 'flex-end' : 'flex-start'}>
+        <Text dimColor={opts.dim} color={opts.color} tabular>
+          {text}
+        </Text>
+      </Box>
+    )
 
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Box justifyContent="space-between">
-          <Text>
+        {/* Status */}
+        <Box flexDirection="column">
+          <Text size="heading" weight="semibold">
             <Text color={color}>● </Text>
-            <Text bold>{title}</Text>
-            {view.leftMs > 0 && <Text dimColor>  ⏱ {fmtClock(view.leftMs)}</Text>}
+            {title}
           </Text>
-          <Text dimColor>
-            TTL {ttl} · {s.ttlSource}
+          <Text size="caption" dimColor>
+            {subtitle}
           </Text>
         </Box>
-        {view.leftMs > 0 &&
-          ('Progress' in table ? (
-            <table.Progress label="Cache lifetime left" value={life} valueText={`${fmtClock(view.leftMs)} of ${ttl}`} color={color} />
-          ) : (
-            <Text color={color}>{bar(life, width)}</Text>
-          ))}
-
-        <Box flexDirection="column" marginTop={1}>
-          {[
-            ['Model', view.last?.model ?? '—'],
-            ['Context', `${fmtTokens(view.tokens)} tokens`],
-            ['Lifetime', `${ttl} · ${s.ttlSource}`],
-            ['Cold send', view.cost ? `~${fmtUsd(view.cost.cold)} (warm ~${fmtUsd(view.cost.warm)})` : 'n/a for this model'],
-            ['Misses', misses ? `${misses} this session · ${fmtUsd(missCost)} rewritten` : 'none this session'],
-          ].map(([k, v]) => (
-            <Box key={`kv:${k}`} gap={1}>
-              <Box width={11}>
-                <Text dimColor>{k}</Text>
-              </Box>
-              <Text>{v}</Text>
-            </Box>
-          ))}
-        </Box>
-        {view.kind === 'cold' && (
-          <Text color="error">
-            The next message rewrites {fmtTokens(view.tokens)} tokens: ~{fmtUsd(view.cost?.cold)} (warm it would be ~{fmtUsd(view.cost?.warm)}).
-          </Text>
+        {view.leftMs > 0 && (
+          <Box marginTop={1}>{bar('Expires in', view.leftMs / ttlMs(ttl), fmtClock(view.leftMs), color)}</Box>
         )}
-        {view.miss && <Text color="error">Last miss: {view.miss}</Text>}
 
+        {/* Tiles */}
+        {view.kind !== 'none' && (
+          <Box marginTop={1} gap={2}>
+            {tile('ctx', fmtTokens(view.tokens), 'context')}
+            {tile('hit', `${Math.round(sessionHit * 100)}%`, 'from cache', sessionHit >= 0.8 ? 'success' : sessionHit >= 0.4 ? 'warning' : 'error')}
+            {tile('cold', fmtUsd(view.cost?.cold), 'if sent cold', view.kind === 'cold' ? 'error' : undefined)}
+            {tile('saved', fmtUsd(Math.max(0, without - spent)), 'saved', 'success')}
+          </Box>
+        )}
+
+        {/* Last request */}
         {view.last && !view.last.isPing && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text weight="semibold">Last request</Text>
-            <Text>
-              <Text color="success">{'█'.repeat(Math.round(hitRatio(view.last) * width))}</Text>
-              <Text color="warning">{'█'.repeat(Math.round((view.last.write / Math.max(1, promptTokens(view.last))) * width))}</Text>
-              <Text dimColor>{'█'.repeat(Math.round((view.last.fresh / Math.max(1, promptTokens(view.last))) * width))}</Text>
-            </Text>
+          <Box flexDirection="column">
+            {heading('Last request', view.miss ? `missed: ${view.miss}` : `${Math.round(hitRatio(view.last) * 100)}% hit`)}
+            {bar(
+              'Read from cache',
+              hitRatio(view.last),
+              `${fmtTokens(view.last.read)} read · ${fmtTokens(view.last.write)} written · ${fmtTokens(view.last.fresh)} new`,
+              view.miss ? 'error' : 'success',
+            )}
+          </Box>
+        )}
+
+        {/* Session */}
+        {turns.length > 0 && (
+          <Box flexDirection="column">
+            {heading('Session', `${turns.length} requests`)}
             <Text dimColor>
-              <Text color="success">■</Text> read {fmtTokens(view.last.read)}  <Text color="warning">■</Text> written{' '}
-              {fmtTokens(view.last.write)}  ■ new {fmtTokens(view.last.fresh)}  · {Math.round(hitRatio(view.last) * 100)}% hit
+              {fmtUsd(spent)} spent, {fmtUsd(without)} without cache · {fmtTokens(tot.write)} written ·{' '}
+              {missed.length ? `${missed.length} miss${missed.length === 1 ? '' : 'es'}` : 'no misses'}
+            </Text>
+            <Text size="caption" dimColor>
+              {view.last?.model ?? ''} · API list prices; on a subscription this is an equivalent, not a charge.
             </Text>
           </Box>
         )}
 
-        <Box flexDirection="column" marginTop={1}>
-          <Text weight="semibold">Session</Text>
-          <Text dimColor>
-            {turns.length} requests · {totalPrompt ? Math.round((tot.read / totalPrompt) * 100) : 0}% served from cache ·{' '}
-            {fmtTokens(tot.write)} written
-          </Text>
-          <Text>
-            Estimated cost {fmtUsd(spent)} <Text dimColor>· without cache {fmtUsd(without)} · saved </Text>
-            <Text color="success">{fmtUsd(Math.max(0, without - spent))}</Text>
-          </Text>
-          <Text dimColor>API list prices; on a subscription this is an equivalent, not a charge.</Text>
+        {/* Keep warm */}
+        {heading('Keep warm', warm > now ? `${fmtClock(warm - now)} left` : 'off')}
+        <Text dimColor>
+          {warm > now
+            ? `A ping goes out ${ttl === '1h' ? '10 min' : '1 min'} before expiry while you are idle.`
+            : 'Pings the cache before it expires, so a break does not cost a cold send.'}
+          {pings.length ? ` ${pings.length} pings so far, ${fmtUsd(pingSpent)}.` : ''}
+          {ping ? ` Last: ${ping.note}.` : ''}
+        </Text>
+        <Box gap={1} marginTop={1}>
+          <Button key="warm-1h" label="1 hour" onPress={() => void arm($, 3_600_000)} />
+          <Button key="warm-3h" label="3 hours" onPress={() => void arm($, 3 * 3_600_000)} />
+          <Button key="warm-8h" label="8 hours" onPress={() => void arm($, 8 * 3_600_000)} />
+          {warm > now && <Button key="warm-off" variant="secondary" label="Stop" onPress={() => void update($, warmUntil, () => 0)} />}
         </Box>
 
-        <Box flexDirection="column" marginTop={1}>
-          <Text weight="semibold">Keep warm</Text>
+        {/* Guard */}
+        {heading('Confirm cold sends')}
+        <Box justifyContent="space-between" alignItems="center">
           <Text dimColor>
-            {warm > now
-              ? `On for ${fmtClock(warm - now)} more · ping ${ttl === '1h' ? '10 min' : '1 min'} before expiry`
-              : 'Off'}
-            {pings.length ? ` · ${pings.length} pings, ${fmtUsd(pingSpent)}` : ''}
-            {ping ? ` · last: ${ping.note}${ping.usd != null ? ` (${fmtUsd(ping.usd)})` : ''}` : ''}
-          </Text>
-          <Box gap={1}>
-            <Button key="warm-1h" label="1 h" onPress={() => void arm($, 3_600_000)} />
-            <Button key="warm-3h" label="3 h" onPress={() => void arm($, 3 * 3_600_000)} />
-            <Button key="warm-8h" label="8 h" onPress={() => void arm($, 8 * 3_600_000)} />
-            {warm > now && <Button key="warm-off" label="Stop" onPress={() => void update($, warmUntil, () => 0)} />}
-          </Box>
-        </Box>
-
-        <Box marginTop={1} justifyContent="space-between">
-          <Text>
-            <Text color={isGuarded ? 'success' : 'inactive'}>{isGuarded ? '● ' : '○ '}</Text>
-            Confirm cold sends <Text dimColor>(from {fmtTokens(guardMin)} tokens)</Text>
+            {isGuarded ? `Asks before sending when the cache is cold and the context is ${fmtTokens(guardMin)}+ tokens.` : 'Off: cold sends go out without asking.'}
           </Text>
           <Button
             key="guard"
-            plain
-            dimColor={isGuarded}
+            variant={isGuarded ? 'secondary' : 'primary'}
             label={isGuarded ? 'Turn off' : 'Turn on'}
             onPress={() =>
               void (async () => {
@@ -538,9 +562,17 @@ export const register: Register = (on, options) => {
           />
         </Box>
 
+        {/* Turns */}
         {rows.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text weight="semibold">Turns</Text>
+          <Box flexDirection="column">
+            {heading('Turns', 'newest first')}
+            <Box>
+              {cell(6, 'turn', { dim: true })}
+              {cell(7, 'hit', { dim: true, right: true })}
+              {cell(9, 'read', { dim: true, right: true })}
+              {cell(9, 'written', { dim: true, right: true })}
+              {cell(9, 'cost', { dim: true, right: true })}
+            </Box>
             {rows.map(([id, xs], i) => {
               const r = xs.reduce((a, x) => ({ read: a.read + x.read, write: a.write + x.write, fresh: a.fresh + x.fresh }), {
                 read: 0,
@@ -550,19 +582,15 @@ export const register: Register = (on, options) => {
               const total = r.read + r.write + r.fresh
               const pct = total ? Math.round((r.read / total) * 100) : 0
               return (
-                <Box key={`t:${id}`} justifyContent="space-between">
-                  <Text dimColor>
-                    #{byTurn.size - i} · {xs.length} req.
-                  </Text>
-                  <Text color={pct >= 80 ? 'success' : pct >= 40 ? 'warning' : 'error'}>{pct}%</Text>
-                  <Text dimColor>
-                    {fmtTokens(r.read)} / {fmtTokens(r.write)} / {fmtTokens(r.fresh)}
-                  </Text>
-                  <Text>{fmtUsd(sum(xs, x => costOf(x, ttl)))}</Text>
+                <Box key={`t:${id}`}>
+                  {cell(6, `#${byTurn.size - i}`, { dim: true })}
+                  {cell(7, `${pct}%`, { right: true, color: pct >= 80 ? 'success' : pct >= 40 ? 'warning' : 'error' })}
+                  {cell(9, fmtTokens(r.read), { right: true })}
+                  {cell(9, fmtTokens(r.write), { right: true })}
+                  {cell(9, fmtUsd(sum(xs, x => costOf(x, ttl))), { right: true })}
                 </Box>
               )
             })}
-            <Text dimColor>read / written / new</Text>
           </Box>
         )}
       </Box>
