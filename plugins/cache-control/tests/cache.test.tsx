@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { missReason, parseDuration, sendCost, viewOf } from '../hooks/cache.ts'
+import { missReason, parseDuration, sendCost, viewOf } from '../hooks/cache'
 import type { Sample } from '../types'
 
 const T0 = 1_800_000_000_000
@@ -82,4 +82,31 @@ test('/cache warm arms keep-warm and /cache status says so', async ($, on) => {
   expect((await $.command.run(run('warm 90m'))).text).toContain('1:30:00')
   expect((await $.command.run(run('status'))).text).toContain('Keeping warm')
   expect((await $.command.run(run('warm off'))).text).toContain('off')
+})
+
+test('the band and the pane draw on the terminal and desktop', async ($, on) => {
+  engine(on, [big(T0 + 2 * 3_600_000 - 2 * 60_000)])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({
+      plugin: 'cache-control',
+      component: 'AbovePrompt',
+      surface,
+      props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+    })
+    expect((await band.find({ type: 'Text', text: /keep going/ }))?.text).toContain('warm')
+    expect(await band.find({ key: 'details' })).toBeDefined()
+    await band.unmount()
+
+    const pane = await $.ui.mount({
+      plugin: 'cache-control',
+      component: 'Pane',
+      requestId: 'cache-control',
+      surface,
+      props: { title: 'Cache', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+    })
+    expect(await pane.find({ type: 'Text', text: 'Context' })).toBeDefined()
+    expect(await pane.find({ key: 'guard' })).toBeDefined()
+    await pane.unmount()
+  }
 })

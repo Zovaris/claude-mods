@@ -85,19 +85,22 @@ export function backdropSvg(seed = 7): string {
       [5, 0.012 + rand() * 0.02, rand() * 6.28],
       [7, 0.006 + rand() * 0.01, rand() * 6.28],
     ]
+    const own: string[] = []
     for (let k = island.rings - 1; k >= 0; k--) {
       const d = ring(island, k, waves)
       const isCore = island.accent && k === 0
       if (isCore) {
         defs.push(`<clipPath id="core${idx}"><path d="${d}"/></clipPath>`)
-        parts.push(`<rect width="${W}" height="${H}" fill="url(#hatch)" clip-path="url(#core${idx})"/>`)
-        parts.push(`<path d="${d}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.6" stroke-opacity="0.9"/>`)
+        own.push(`<rect class="hatch" width="${W}" height="${H}" fill="url(#hatch)" clip-path="url(#core${idx})"/>`)
+        own.push(`<path d="${d}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.6" stroke-opacity="0.9"/>`)
       } else {
         // Fade the lines outward.
         const opacity = Math.max(0.18, 0.62 - k * 0.028)
-        parts.push(`<path d="${d}" fill="none" stroke="${PALETTE.line}" stroke-width="1.1" stroke-opacity="${opacity.toFixed(2)}"/>`)
+        own.push(`<path d="${d}" fill="none" stroke="${PALETTE.line}" stroke-width="1.1" stroke-opacity="${opacity.toFixed(2)}"/>`)
       }
     }
+    // Each island drifts on its own slow loop.
+    parts.push(`<g class="drift" style="animation-duration:${70 + idx * 13}s;animation-delay:-${idx * 9}s">${own.join('')}</g>`)
   })
 
   // A few survey marks.
@@ -110,6 +113,13 @@ export function backdropSvg(seed = 7): string {
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">` +
+    `<style>` +
+    `.drift{animation:drift 80s ease-in-out infinite alternate;transform-box:view-box}` +
+    `.hatch{animation:breathe 9s ease-in-out infinite alternate}` +
+    `@keyframes drift{from{transform:translate(0,0)}to{transform:translate(14px,-10px)}}` +
+    `@keyframes breathe{from{opacity:.55}to{opacity:1}}` +
+    `@media (prefers-reduced-motion:reduce){.drift,.hatch{animation:none}}` +
+    `</style>` +
     `<defs>${defs.join('')}</defs>` +
     `<rect width="${W}" height="${H}" fill="${PALETTE.sea}"/>` +
     parts.join('') +

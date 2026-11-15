@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { backdropSvg } from '../hooks/contours.ts'
+import { backdropSvg } from '../hooks/contours'
 
 test('the backdrop is a seeded, well-formed SVG', () => {
   const svg = backdropSvg()
@@ -27,7 +27,7 @@ test('the theme is set at start and drawn as an Svg on desktop', async ($, on) =
     component: 'Backdrop',
     requestId: 'backdrop',
     surface: 'desktop',
-    props: { id: 'tideline', plugin: 'tideline', glass: { blur: 18, opacity: 0.74 } },
+    props: { scene: 'tideline', plugin: 'tideline', glass: { blur: 18, opacity: 0.7 } },
   })
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.unmount()

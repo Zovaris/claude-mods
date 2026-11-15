@@ -59,11 +59,11 @@ test('turning Gmail off by name blocks its tools and switches the connector', as
 
   expect((await $.command.run(run('off gmail'))).text).toBe('Gmail: off')
   expect(sets).toEqual([{ connector: G, enabled: false }])
-  expect((await $.tool.call({ tool: `mcp__${G}__get_thread` })).deny).toContain('tool-toggle')
+  expect((await $.tool.call({ tool: `mcp__${G}__get_thread` } as never)).deny).toContain('tool-toggle')
   expect((await $.tool.call({ tool: 'Bash', command: 'ls' })).deny).toBeUndefined()
 
   await $.command.run(run('on gmail'))
-  expect((await $.tool.call({ tool: `mcp__${G}__get_thread` })).deny).toBeUndefined()
+  expect((await $.tool.call({ tool: `mcp__${G}__get_thread` } as never)).deny).toBeUndefined()
 })
 
 test('the pane shows connectors by name and toggles them, on every surface', async ($, on) => {
@@ -74,10 +74,10 @@ test('the pane shows connectors by name and toggles them, on every surface', asy
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: 'Gmail' })).toBeDefined()
+    expect(await ui.find({ key: `exp:${G}` })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Slack' })).toBeDefined()
     await ui.press({ key: `srv:${G}` })
-    expect((await ui.find({ type: 'Text', text: /blocked/ }))?.text).toContain('1 blocked')
+    expect((await ui.find({ type: 'Text', text: /connectors on/ }))?.text).toContain('0 of 2')
     await ui.press({ key: 'all-on' })
     await ui.unmount()
   }

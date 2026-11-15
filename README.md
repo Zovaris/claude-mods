@@ -50,7 +50,7 @@ Ideas from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-
 
 ## tideline
 
-Sets a backdrop behind the conversation with dark frosted panels and draws it as seeded contour lines with orange accents. `/tideline off` and `/tideline on` switch it; the choice is kept. The terminal draws no backdrop.
+A dark navy palette with orange accents (built with the design system's `makeColors`), and a slowly drifting contour-line scene behind the conversation under dark frosted panels. Needs Claude Code 2.1.325 or newer. `/tideline off` and `/tideline on` switch it; the choice is kept. The terminal draws no backdrop.
 
 ## Development
 

@@ -26,14 +26,16 @@ import {
   fmtTokens,
   fmtUsd,
   hitRatio,
+  missReason,
   observeTtl,
   parseDuration,
   promptTokens,
+  sendCost,
   ttlMs,
   uncachedCostOf,
   viewOf,
-} from './cache.ts'
-import type { Account, CacheEnv, Ttl, View } from './cache.ts'
+} from './cache'
+import type { Account, CacheEnv, Ttl, View } from './cache'
 
 const PANE = 'cache-control'
 const KEEP = 300
@@ -340,34 +342,47 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!showBand || e.props.hasSurvey) return next(e)
-    const { view, warm, now } = await snapshot($)
-    if (view.kind === 'none') return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    const below = await next(e)
+    const { view, warm, now, ttl } = await snapshot($)
+    if (view.kind === 'none' || !view.last) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
 
     const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
-    const last = view.last
-    const head =
+    const last = [...(await read($, samples))].reverse().find(x => !x.isPing) ?? view.last
+    const hit = hitRatio(last)
+    const word = { warm: 'warm', soon: 'expiring', cold: 'cold', compacted: 'compacted', uncached: 'uncached', none: '' }[view.kind]
+    const advice =
       view.kind === 'warm'
-        ? `warm · ${Math.round(hitRatio(last ?? view.last!) * 100)}% · ⏱ ${fmtClock(view.leftMs)} · ${fmtTokens(view.tokens)}`
+        ? view.miss
+          ? `missed: ${view.miss}`
+          : `keep going · a cold send would cost ~${fmtUsd(view.cost?.cold)}`
         : view.kind === 'soon'
-          ? `expires in ${fmtClock(view.leftMs)} · any message renews it for free`
+          ? `any message renews it for free · cold it costs ~${fmtUsd(view.cost?.cold)}`
           : view.kind === 'cold'
-            ? `cold · the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)})`
+            ? `the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)} vs ~${fmtUsd(view.cost?.warm)} warm) · /compact or /clear first`
             : view.kind === 'compacted'
-              ? 'compacted · the next message starts from the summary'
-              : 'the last request was not cached'
+              ? 'the next message starts from the summary'
+              : 'prompt under the model minimum, or caching off'
 
     return (
       <Box flexDirection="column">
-        <Box>
-          <Text color={color}>● </Text>
-          <Text dimColor={view.kind !== 'cold'}>{head}</Text>
-          {view.kind === 'warm' && view.cost && <Text dimColor> · cold ~{fmtUsd(view.cost.cold)}</Text>}
-          {warm > now && <Text color="warning"> · ♨ {fmtClock(warm - now)}</Text>}
-          {view.miss && <Text color="error"> · miss: {view.miss}</Text>}
+        <Box justifyContent="space-between">
+          <Text>
+            <Text color={color}>● cache </Text>
+            <Text color={hit >= 0.8 ? 'success' : hit >= 0.4 ? 'warning' : 'error'}>{bar(hit, 10)}</Text>
+            <Text> {Math.round(hit * 100)}%</Text>
+            <Text dimColor>
+              {' '}
+              read {fmtTokens(last.read)} · wrote {fmtTokens(last.write)} · new {fmtTokens(last.fresh)}
+            </Text>
+            {view.leftMs > 0 && <Text color={color}> ⏱ {fmtClock(view.leftMs)}</Text>}
+            <Text dimColor> {ttl}</Text>
+            {warm > now && <Text color="warning"> ♨ {fmtClock(warm - now)}</Text>}
+          </Text>
+          <Button key="details" plain dimColor label="Details" onPress={() => void $.ui.open({ id: PANE, title: 'Cache' })} />
         </Box>
-        {below}
+        <Text dimColor={view.kind === 'warm' && !view.miss} color={view.kind === 'cold' || view.miss ? 'error' : undefined}>
+          {word}: {advice}
+        </Text>
       </Box>
     )
   })
@@ -403,6 +418,14 @@ export const register: Register = (on, options) => {
       none: 'No requests yet',
     }[view.kind]
     const life = view.leftMs / ttlMs(ttl)
+    const table = $.ui.resolve(e)
+    // Requests that wrote the cache instead of reading it, and what that cost.
+    const missed = turns.filter((x, i) => i > 0 && missReason(turns[i - 1], x, ttl) !== undefined)
+    const misses = missed.length
+    const missCost = missed.reduce((a, x) => {
+      const c = sendCost(x.model, x.write, ttl)
+      return a + (c?.cold ?? 0)
+    }, 0)
 
     // One row per turn, newest first.
     const byTurn = new Map<string, Sample[]>()
@@ -421,7 +444,29 @@ export const register: Register = (on, options) => {
             TTL {ttl} · {s.ttlSource}
           </Text>
         </Box>
-        {view.leftMs > 0 && <Text color={color}>{bar(life, width)}</Text>}
+        {view.leftMs > 0 &&
+          ('Progress' in table ? (
+            <table.Progress label="Cache lifetime left" value={life} valueText={`${fmtClock(view.leftMs)} of ${ttl}`} color={color} />
+          ) : (
+            <Text color={color}>{bar(life, width)}</Text>
+          ))}
+
+        <Box flexDirection="column" marginTop={1}>
+          {[
+            ['Model', view.last?.model ?? '—'],
+            ['Context', `${fmtTokens(view.tokens)} tokens`],
+            ['Lifetime', `${ttl} · ${s.ttlSource}`],
+            ['Cold send', view.cost ? `~${fmtUsd(view.cost.cold)} (warm ~${fmtUsd(view.cost.warm)})` : 'n/a for this model'],
+            ['Misses', misses ? `${misses} this session · ${fmtUsd(missCost)} rewritten` : 'none this session'],
+          ].map(([k, v]) => (
+            <Box key={`kv:${k}`} gap={1}>
+              <Box width={11}>
+                <Text dimColor>{k}</Text>
+              </Box>
+              <Text>{v}</Text>
+            </Box>
+          ))}
+        </Box>
         {view.kind === 'cold' && (
           <Text color="error">
             The next message rewrites {fmtTokens(view.tokens)} tokens: ~{fmtUsd(view.cost?.cold)} (warm it would be ~{fmtUsd(view.cost?.warm)}).
@@ -476,28 +521,21 @@ export const register: Register = (on, options) => {
 
         <Box marginTop={1} justifyContent="space-between">
           <Text>
+            <Text color={isGuarded ? 'success' : 'inactive'}>{isGuarded ? '● ' : '○ '}</Text>
             Confirm cold sends <Text dimColor>(from {fmtTokens(guardMin)} tokens)</Text>
           </Text>
           <Button
             key="guard"
             plain
+            dimColor={isGuarded}
+            label={isGuarded ? 'Turn off' : 'Turn on'}
             onPress={() =>
               void (async () => {
                 await update($, guard, g => !g)
                 await $.store.set('guard', await read($, guard))
               })()
             }
-          >
-            {isGuarded ? (
-              <Text backgroundColor="success" color="inverseText" size="caption" weight="semibold">
-                {' '}ON{' '}
-              </Text>
-            ) : (
-              <Text backgroundColor="subtle" color="inactive" size="caption" weight="semibold">
-                {' '}OFF{' '}
-              </Text>
-            )}
-          </Button>
+          />
         </Box>
 
         {rows.length > 0 && (
