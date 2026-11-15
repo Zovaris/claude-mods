@@ -1,0 +1,85 @@
+import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
+
+import { missReason, parseDuration, sendCost, viewOf } from '../hooks/cache.ts'
+import type { Sample } from '../types'
+
+const T0 = 1_800_000_000_000
+const big = (startedAt: number, over: Partial<Sample> = {}): Sample => ({
+  turnId: 't1',
+  model: 'claude-opus-5-5',
+  startedAt,
+  read: 190_000,
+  write: 8_000,
+  fresh: 2_000,
+  output: 1_000,
+  ...over,
+})
+
+test('the clock: warm, soon, cold', () => {
+  const s = [big(T0)]
+  expect(viewOf(s, '1h', T0 + 10 * 60_000, 0).kind).toBe('warm')
+  expect(viewOf(s, '1h', T0 + 57 * 60_000, 0).kind).toBe('soon')
+  expect(viewOf(s, '1h', T0 + 61 * 60_000, 0).kind).toBe('cold')
+  expect(viewOf(s, '5m', T0 + 6 * 60_000, 0).kind).toBe('cold')
+  expect(viewOf(s, '1h', T0 + 1000, T0 + 500).kind).toBe('compacted')
+})
+
+test('a cold send of 200k on Opus 5.5 with a 1h cache', () => {
+  const cost = sendCost('claude-opus-5-5', 200_000, '1h')
+  expect(cost?.cold.toFixed(2)).toBe('1.60') // 200k × $4 × 2
+  expect(cost?.warm.toFixed(2)).toBe('0.04') // 200k × $0.20
+  expect(sendCost('some-other-model', 1000, '1h')).toBeNull()
+})
+
+test('miss causes', () => {
+  const prev = big(T0)
+  expect(missReason(prev, big(T0 + 60_000, { read: 0, write: 200_000 }), '1h')).toContain('prefix')
+  expect(missReason(prev, big(T0 + 2 * 3_600_000, { read: 0, write: 200_000 }), '1h')).toContain('expired')
+  expect(missReason(prev, big(T0 + 60_000, { model: 'claude-sonnet-5-5', read: 0, write: 200_000 }), '1h')).toContain('model')
+  expect(missReason(prev, big(T0 + 60_000), '1h')).toBeUndefined()
+})
+
+test('durations', () => {
+  expect(parseDuration('90m')).toBe(90 * 60_000)
+  expect(parseDuration('2h30m')).toBe(150 * 60_000)
+  expect(parseDuration('soon')).toBeNull()
+})
+
+const engine = (on: On, seeded: Sample[]) => {
+  mock.store(on)
+  mock.clock(on, { now: T0 + 2 * 3_600_000 })
+  on('command.register', () => ({ value: { command: 'cache' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: T0, context: { window: 1_000_000 }, rateLimits: [] } }))
+  on('state.get', ($, e, next) =>
+    e.key === 'samples' ? { value: { value: { shape: 'samples-1', value: seeded }, version: 1 } } : next(e),
+  )
+  // The question dialog is dismissed.
+  on('tool.call', () => ({ deny: 'dismissed' }))
+}
+
+const run = (args: string) =>
+  ({ command: 'cache', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const
+
+test('a cold send of a large context is held, unless the guard is off', async ($, on) => {
+  engine(on, [big(T0)])
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  const held = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
+  expect(held.drop).toContain('cold')
+
+  await $.command.run(run('guard off'))
+  const sent = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
+  expect(sent.text).toBe('hola')
+})
+
+test('/cache warm arms keep-warm and /cache status says so', async ($, on) => {
+  engine(on, [big(T0 + 2 * 3_600_000 - 60_000)])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect((await $.command.run(run('warm 90m'))).text).toContain('1:30:00')
+  expect((await $.command.run(run('status'))).text).toContain('Keeping warm')
+  expect((await $.command.run(run('warm off'))).text).toContain('off')
+})

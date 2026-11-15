@@ -1,0 +1,533 @@
+/**
+ * cache-control: a prompt-cache meter for Claude Code.
+ *
+ *   - turn.step reads each main-loop request's usage (read / written / new)
+ *   - a band above the prompt: state, hit rate, countdown, cost of a cold send
+ *   - a cold-send guard: with the cache expired and a large context, asks
+ *     before the message goes out, with what it will cost
+ *   - keep-warm: while armed (/cache warm 2h), a tool-less fork over the
+ *     transcript shortly before expiry refreshes the cache for a cache read
+ *   - /cache opens a pane with the countdown, the last request, the session's
+ *     totals and savings, and the turns
+ *
+ * Costs are list-price estimates (a subscription is not billed per token, so
+ * read them as the API-equivalent); cold/warm is an estimate from the clock.
+ */
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
+
+import type { Ping, Sample } from '../types'
+import {
+  accountOf,
+  bar,
+  costOf,
+  decideTtl,
+  fmtClock,
+  fmtTokens,
+  fmtUsd,
+  hitRatio,
+  observeTtl,
+  parseDuration,
+  promptTokens,
+  ttlMs,
+  uncachedCostOf,
+  viewOf,
+} from './cache.ts'
+import type { Account, CacheEnv, Ttl, View } from './cache.ts'
+
+const PANE = 'cache-control'
+const KEEP = 300
+const TOAST_MIN = 20_000
+const MAX_WARM = 12 * 3_600_000
+const DEFAULT_WARM = 2 * 3_600_000
+const PING_PROMPT = 'Cache keep-alive: reply with just "ok", no tools.'
+
+const samples = atom({ plugin: 'cache-control', key: 'samples' } as const, [], { shape: 'samples-1' })
+const observedTtl = atom({ plugin: 'cache-control', key: 'observedTtl' } as const, null, { shape: 'ttl-1' })
+const compactedAt = atom({ plugin: 'cache-control', key: 'compactedAt' } as const, 0, { shape: 'compacted-1' })
+const warmUntil = atom({ plugin: 'cache-control', key: 'warmUntil' } as const, 0, { shape: 'warm-1' })
+const lastPing = atom({ plugin: 'cache-control', key: 'lastPing' } as const, null, { shape: 'ping-1' })
+const guard = atom({ plugin: 'cache-control', key: 'guard' } as const, true, { shape: 'guard-1' })
+
+// Module values: rebuilt by session.start after a reload.
+let env: CacheEnv = {}
+let setting: unknown
+let account: Account = 'other'
+let base: { ttl: Ttl; source: string } = { ttl: '5m', source: 'default' }
+let ticker: { cancel: () => void } | undefined
+let lastKey = ''
+let toastedFor = 0
+let isBusy = false
+let isPinging = false
+let nextPingAt = 0
+
+/** When a ping goes out: this long before expiry. */
+const leadMs = (ttl: Ttl) => (ttl === '1h' ? 10 * 60_000 : 60_000)
+
+type Snapshot = { ttl: Ttl; ttlSource: string; view: View; list: Sample[]; warm: number; now: number }
+
+async function snapshot($: EngineInterface): Promise<Snapshot> {
+  const now = await $.clock.now()
+  const seen = await read($, observedTtl)
+  const ttl = seen ?? base.ttl
+  const list = await read($, samples)
+  return {
+    ttl,
+    ttlSource: seen ? `observed from traffic (${base.source} said ${base.ttl})` : base.source,
+    view: viewOf(list, ttl, now, await read($, compactedAt)),
+    list,
+    warm: await read($, warmUntil),
+    now,
+  }
+}
+
+async function readSettingTtl($: EngineInterface): Promise<unknown> {
+  const home = await $.env.get('HOME').catch(() => undefined)
+  const cwd = await $.session.cwd().catch(() => undefined)
+  const files = [cwd && `${cwd}/.claude/settings.local.json`, cwd && `${cwd}/.claude/settings.json`, home && `${home}/.claude/settings.json`]
+  for (const file of files) {
+    if (!file) continue
+    try {
+      const json = JSON.parse(await $.fs.read(file)) as { promptCacheTtl?: unknown }
+      if (json.promptCacheTtl === '5m' || json.promptCacheTtl === '1h') return json.promptCacheTtl
+    } catch {
+      // missing or unreadable: the next one
+    }
+  }
+  return undefined
+}
+
+async function refreshAccount($: EngineInterface, option: unknown) {
+  account = accountOf((await $.session.usage().catch(() => undefined))?.rateLimits ?? [])
+  base = decideTtl(option, env, setting, account)
+}
+
+async function ping($: EngineInterface) {
+  if (isPinging) return
+  isPinging = true
+  try {
+    const startedAt = await $.clock.now()
+    const model = (await read($, samples)).at(-1)?.model ?? ''
+    const r = await $.model.fork({ prompt: PING_PROMPT })
+    if (!r.isAnswered) {
+      const reason = 'reason' in r ? String(r.reason) : 'no reply'
+      // A busy API: try again in a minute while the cache can still land.
+      nextPingAt = startedAt + 60_000
+      await update($, lastPing, () => ({ at: startedAt, read: 0, write: 0, usd: null, ok: false, note: reason }))
+      return
+    }
+    const u = r.usage
+    const sample: Sample = {
+      turnId: 'ping',
+      model,
+      startedAt,
+      read: u.cache_read_input_tokens,
+      write: u.cache_creation_input_tokens,
+      fresh: u.input_tokens,
+      output: u.output_tokens,
+      isPing: true,
+    }
+    const { ttl } = await snapshot($)
+    const usd = costOf(sample, ttl)
+    // Nothing read, or a large write: the cache had already gone, pinging is pointless.
+    const ok = sample.read > 0 && sample.write < sample.read * 0.1
+    await update($, samples, list => [...list, sample].slice(-KEEP))
+    await update($, lastPing, () => ({
+      at: startedAt,
+      read: sample.read,
+      write: sample.write,
+      usd,
+      ok,
+      note: ok ? `read ${fmtTokens(sample.read)}` : 'the cache was already cold',
+    }))
+    if (!ok) {
+      await update($, warmUntil, () => 0)
+      $.ui.toast('cache-control: the cache was already cold, so keep-warm stopped.')
+    }
+  } catch (err) {
+    $.ui.log(`cache-control: ping failed: ${String(err)}`, { to: 'debug' })
+    nextPingAt = (await $.clock.now()) + 60_000
+  } finally {
+    isPinging = false
+    lastKey = ''
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function tick($: EngineInterface, wantToast: boolean) {
+  const s = await snapshot($)
+  const { view, now, ttl, warm } = s
+  const clock = view.leftMs > 0 ? fmtClock(view.leftMs) : ''
+  const key = `${view.kind}|${clock}|${warm > now ? fmtClock(warm - now) : ''}|${view.miss ?? ''}`
+  if (key !== lastKey) {
+    lastKey = key
+    $.ui.invalidate('ui.render')
+  }
+
+  const last = view.last
+  if (wantToast && last && view.kind === 'soon' && view.tokens >= TOAST_MIN && warm <= now && toastedFor !== last.startedAt) {
+    toastedFor = last.startedAt
+    $.ui.toast(
+      `The cache expires in ${fmtClock(view.leftMs)}: any message renews it; otherwise rewriting ${fmtTokens(view.tokens)} will cost ~${fmtUsd(view.cost?.cold)}.`,
+    )
+  }
+
+  if (warm > now && !isBusy && !isPinging && now >= nextPingAt && (view.kind === 'warm' || view.kind === 'soon')) {
+    if (view.leftMs <= leadMs(ttl)) void ping($)
+  }
+  if (warm > 0 && warm <= now) await update($, warmUntil, () => 0)
+}
+
+async function arm($: EngineInterface, ms: number) {
+  const until = (await $.clock.now()) + Math.min(MAX_WARM, ms)
+  await update($, warmUntil, () => until)
+  lastKey = ''
+}
+
+function statusText(s: Snapshot, isGuarded: boolean, guardMin: number): string {
+  const { view, ttl, warm, now } = s
+  const lines = [`${ttl} cache (${s.ttlSource}).`]
+  if (view.kind === 'none') lines.push('No requests yet.')
+  else if (view.kind === 'cold') lines.push(`Cold: the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)}).`)
+  else if (view.kind === 'compacted') lines.push('Compacted: the next message starts from the summary.')
+  else if (view.kind === 'uncached') lines.push('The last request was not cached.')
+  else lines.push(`Warm: expires in ${fmtClock(view.leftMs)} (${fmtTokens(view.tokens)} tokens).`)
+  if (view.miss) lines.push(`Last miss: ${view.miss}.`)
+  lines.push(warm > now ? `Keeping warm for ${fmtClock(warm - now)} more.` : 'Keep-warm: off.')
+  lines.push(`Confirm cold sends: ${isGuarded ? `yes, from ${fmtTokens(guardMin)} tokens` : 'no'}.`)
+  return lines.join('\n')
+}
+
+export const register: Register = (on, options) => {
+  const guardMin = typeof options.guardMinTokens === 'number' && options.guardMinTokens > 0 ? options.guardMinTokens : 50_000
+  const showBand = options.band !== false
+  const wantToast = options.toast !== false
+
+  on('session.start', async ($, e, next) => {
+    const r = await next(e)
+    const none = () => undefined
+    env = {
+      enable1h: await $.env.get('ENABLE_PROMPT_CACHING_1H').catch(none),
+      force5m: await $.env.get('FORCE_PROMPT_CACHING_5M').catch(none),
+      ttlVar: await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL').catch(none),
+      disableAll: await $.env.get('DISABLE_PROMPT_CACHING').catch(none),
+    }
+    setting = await readSettingTtl($)
+    await refreshAccount($, options.ttl)
+    const stored = await $.store.get('guard')
+    if (typeof stored === 'boolean') await update($, guard, () => stored)
+
+    await $.command.register({
+      name: 'cache',
+      description: 'Prompt cache: pane, keep-warm and cold-send confirmation',
+      argumentHint: '[warm [2h] | warm off | guard on|off | status]',
+    })
+
+    lastKey = ''
+    ticker?.cancel()
+    ticker = $.clock.every(1000, () => void tick($, wantToast))
+    return r
+  })
+
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      // /clear starts a new conversation and a new cache.
+      await update($, samples, () => [])
+      await update($, observedTtl, () => null)
+      await update($, warmUntil, () => 0)
+      lastKey = ''
+      return next(e)
+    }
+    ticker?.cancel()
+    ticker = undefined
+    return next(e)
+  })
+
+  on('session.compact', async ($, e, next) => {
+    const r = await next(e)
+    if (e.agentId || String(e.trigger) === 'precompute' || 'skip' in r) return r
+    const now = await $.clock.now()
+    await update($, compactedAt, () => now)
+    lastKey = ''
+    return r
+  })
+
+  // Each main-loop request: what the cache did with it.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId) return yield* next(e)
+    const startedAt = await $.clock.now()
+    const r = yield* next(e)
+    if (r.usage) {
+      const sample: Sample = {
+        turnId: e.turnId,
+        model: r.usage.model || e.model,
+        startedAt,
+        read: r.usage.cache_read_input_tokens,
+        write: r.usage.cache_creation_input_tokens,
+        fresh: r.usage.input_tokens,
+        output: r.usage.output_tokens,
+      }
+      const before = await read($, samples)
+      await update($, samples, list => [...list, sample].slice(-KEEP))
+      if (options.ttl !== '5m' && options.ttl !== '1h') {
+        await refreshAccount($, options.ttl)
+        const prev = before.filter(s => !s.isPing).at(-1)
+        const seen = observeTtl(prev, sample, await read($, observedTtl))
+        await update($, observedTtl, () => seen)
+      }
+      lastKey = ''
+      $.ui.invalidate('ui.render')
+    }
+    return r
+  })
+
+  // The cold-send guard, and the busy flag that keeps pings off a running turn.
+  on('prompt.submit', async ($, e, next) => {
+    const isPerson = e.origin.kind === 'composer' && !e.command && !e.isMeta
+    if (isPerson && (await read($, guard))) {
+      const { view } = await snapshot($)
+      if (view.kind === 'cold' && view.tokens >= guardMin && view.cost) {
+        const cold = fmtUsd(view.cost.cold)
+        const warm = fmtUsd(view.cost.warm)
+        const send = `Send anyway (~${cold})`
+        try {
+          const answer = await $.ui.ask(
+            `The cache expired: this message rewrites ${fmtTokens(view.tokens)} tokens (~${cold} at API prices, vs ~${warm} warm). Send it?`,
+            { options: [send, 'Don\'t send'], header: 'Cold cache' },
+          )
+          if (answer !== send) return { drop: 'Not sent: the cache was cold. Try /compact or /clear, or send it again.' }
+        } catch {
+          return { drop: 'Not sent: the cache was cold and nobody confirmed.' }
+        }
+      }
+    }
+    isBusy = true
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    isBusy = false
+    return next(e)
+  })
+
+  on('command.run', { command: 'cache' }, async ($, e) => {
+    const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/)
+    if (verb === '') {
+      await $.ui.open({ id: PANE, title: 'Cache' })
+      return { text: 'Cache pane opened.' }
+    }
+    if (verb === 'warm') {
+      if (arg === 'off') {
+        await update($, warmUntil, () => 0)
+        return { text: 'Keep-warm: off.' }
+      }
+      const ms = arg ? parseDuration(arg) : DEFAULT_WARM
+      if (!ms) return { text: 'Usage: /cache warm 90m · /cache warm 2h · /cache warm off' }
+      await arm($, ms)
+      const { ttl } = await snapshot($)
+      return {
+        text: `Keeping the cache warm for ${fmtClock(Math.min(MAX_WARM, ms))}: a ping ${ttl === '1h' ? '10 min' : '1 min'} before it expires, while you are idle.`,
+      }
+    }
+    if (verb === 'guard' && (arg === 'on' || arg === 'off')) {
+      await update($, guard, () => arg === 'on')
+      await $.store.set('guard', arg === 'on')
+      return { text: `Confirm cold sends: ${arg}.` }
+    }
+    if (verb === 'status') return { text: statusText(await snapshot($), await read($, guard), guardMin) }
+    return { text: 'Usage: /cache · /cache warm [2h] · /cache warm off · /cache guard on|off · /cache status' }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!showBand || e.props.hasSurvey) return next(e)
+    const { view, warm, now } = await snapshot($)
+    if (view.kind === 'none') return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    const below = await next(e)
+
+    const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
+    const last = view.last
+    const head =
+      view.kind === 'warm'
+        ? `warm · ${Math.round(hitRatio(last ?? view.last!) * 100)}% · ⏱ ${fmtClock(view.leftMs)} · ${fmtTokens(view.tokens)}`
+        : view.kind === 'soon'
+          ? `expires in ${fmtClock(view.leftMs)} · any message renews it for free`
+          : view.kind === 'cold'
+            ? `cold · the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)})`
+            : view.kind === 'compacted'
+              ? 'compacted · the next message starts from the summary'
+              : 'the last request was not cached'
+
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text color={color}>● </Text>
+          <Text dimColor={view.kind !== 'cold'}>{head}</Text>
+          {view.kind === 'warm' && view.cost && <Text dimColor> · cold ~{fmtUsd(view.cost.cold)}</Text>}
+          {warm > now && <Text color="warning"> · ♨ {fmtClock(warm - now)}</Text>}
+          {view.miss && <Text color="error"> · miss: {view.miss}</Text>}
+        </Box>
+        {below}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const s = await snapshot($)
+    const { view, ttl, warm, now, list } = s
+    const isGuarded = await read($, guard)
+    const ping: Ping | null = await read($, lastPing)
+    const width = Math.max(10, Math.min(40, (e.props.bodyColumns ?? 50) - 12))
+
+    const turns = list.filter(x => !x.isPing)
+    const pings = list.filter(x => x.isPing)
+    const sum = (xs: Sample[], f: (x: Sample) => number | null) => xs.reduce((a, x) => a + (f(x) ?? 0), 0)
+    const spent = sum(turns, x => costOf(x, ttl))
+    const without = sum(turns, uncachedCostOf)
+    const pingSpent = sum(pings, x => costOf(x, ttl))
+    const tot = turns.reduce((a, x) => ({ read: a.read + x.read, write: a.write + x.write, fresh: a.fresh + x.fresh }), {
+      read: 0,
+      write: 0,
+      fresh: 0,
+    })
+    const totalPrompt = tot.read + tot.write + tot.fresh
+
+    const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
+    const title = {
+      warm: 'Warm',
+      soon: 'Expiring soon',
+      cold: 'Cold',
+      compacted: 'Compacted',
+      uncached: 'Not cached',
+      none: 'No requests yet',
+    }[view.kind]
+    const life = view.leftMs / ttlMs(ttl)
+
+    // One row per turn, newest first.
+    const byTurn = new Map<string, Sample[]>()
+    for (const x of turns) byTurn.set(x.turnId, [...(byTurn.get(x.turnId) ?? []), x])
+    const rows = [...byTurn.entries()].slice(-12).reverse()
+
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Box justifyContent="space-between">
+          <Text>
+            <Text color={color}>● </Text>
+            <Text bold>{title}</Text>
+            {view.leftMs > 0 && <Text dimColor>  ⏱ {fmtClock(view.leftMs)}</Text>}
+          </Text>
+          <Text dimColor>
+            TTL {ttl} · {s.ttlSource}
+          </Text>
+        </Box>
+        {view.leftMs > 0 && <Text color={color}>{bar(life, width)}</Text>}
+        {view.kind === 'cold' && (
+          <Text color="error">
+            The next message rewrites {fmtTokens(view.tokens)} tokens: ~{fmtUsd(view.cost?.cold)} (warm it would be ~{fmtUsd(view.cost?.warm)}).
+          </Text>
+        )}
+        {view.miss && <Text color="error">Last miss: {view.miss}</Text>}
+
+        {view.last && !view.last.isPing && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text weight="semibold">Last request</Text>
+            <Text>
+              <Text color="success">{'█'.repeat(Math.round(hitRatio(view.last) * width))}</Text>
+              <Text color="warning">{'█'.repeat(Math.round((view.last.write / Math.max(1, promptTokens(view.last))) * width))}</Text>
+              <Text dimColor>{'█'.repeat(Math.round((view.last.fresh / Math.max(1, promptTokens(view.last))) * width))}</Text>
+            </Text>
+            <Text dimColor>
+              <Text color="success">■</Text> read {fmtTokens(view.last.read)}  <Text color="warning">■</Text> written{' '}
+              {fmtTokens(view.last.write)}  ■ new {fmtTokens(view.last.fresh)}  · {Math.round(hitRatio(view.last) * 100)}% hit
+            </Text>
+          </Box>
+        )}
+
+        <Box flexDirection="column" marginTop={1}>
+          <Text weight="semibold">Session</Text>
+          <Text dimColor>
+            {turns.length} requests · {totalPrompt ? Math.round((tot.read / totalPrompt) * 100) : 0}% served from cache ·{' '}
+            {fmtTokens(tot.write)} written
+          </Text>
+          <Text>
+            Estimated cost {fmtUsd(spent)} <Text dimColor>· without cache {fmtUsd(without)} · saved </Text>
+            <Text color="success">{fmtUsd(Math.max(0, without - spent))}</Text>
+          </Text>
+          <Text dimColor>API list prices; on a subscription this is an equivalent, not a charge.</Text>
+        </Box>
+
+        <Box flexDirection="column" marginTop={1}>
+          <Text weight="semibold">Keep warm</Text>
+          <Text dimColor>
+            {warm > now
+              ? `On for ${fmtClock(warm - now)} more · ping ${ttl === '1h' ? '10 min' : '1 min'} before expiry`
+              : 'Off'}
+            {pings.length ? ` · ${pings.length} pings, ${fmtUsd(pingSpent)}` : ''}
+            {ping ? ` · last: ${ping.note}${ping.usd != null ? ` (${fmtUsd(ping.usd)})` : ''}` : ''}
+          </Text>
+          <Box gap={1}>
+            <Button key="warm-1h" label="1 h" onPress={() => void arm($, 3_600_000)} />
+            <Button key="warm-3h" label="3 h" onPress={() => void arm($, 3 * 3_600_000)} />
+            <Button key="warm-8h" label="8 h" onPress={() => void arm($, 8 * 3_600_000)} />
+            {warm > now && <Button key="warm-off" label="Stop" onPress={() => void update($, warmUntil, () => 0)} />}
+          </Box>
+        </Box>
+
+        <Box marginTop={1} justifyContent="space-between">
+          <Text>
+            Confirm cold sends <Text dimColor>(from {fmtTokens(guardMin)} tokens)</Text>
+          </Text>
+          <Button
+            key="guard"
+            plain
+            onPress={() =>
+              void (async () => {
+                await update($, guard, g => !g)
+                await $.store.set('guard', await read($, guard))
+              })()
+            }
+          >
+            {isGuarded ? (
+              <Text backgroundColor="success" color="inverseText" size="caption" weight="semibold">
+                {' '}ON{' '}
+              </Text>
+            ) : (
+              <Text backgroundColor="subtle" color="inactive" size="caption" weight="semibold">
+                {' '}OFF{' '}
+              </Text>
+            )}
+          </Button>
+        </Box>
+
+        {rows.length > 0 && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text weight="semibold">Turns</Text>
+            {rows.map(([id, xs], i) => {
+              const r = xs.reduce((a, x) => ({ read: a.read + x.read, write: a.write + x.write, fresh: a.fresh + x.fresh }), {
+                read: 0,
+                write: 0,
+                fresh: 0,
+              })
+              const total = r.read + r.write + r.fresh
+              const pct = total ? Math.round((r.read / total) * 100) : 0
+              return (
+                <Box key={`t:${id}`} justifyContent="space-between">
+                  <Text dimColor>
+                    #{byTurn.size - i} · {xs.length} req.
+                  </Text>
+                  <Text color={pct >= 80 ? 'success' : pct >= 40 ? 'warning' : 'error'}>{pct}%</Text>
+                  <Text dimColor>
+                    {fmtTokens(r.read)} / {fmtTokens(r.write)} / {fmtTokens(r.fresh)}
+                  </Text>
+                  <Text>{fmtUsd(sum(xs, x => costOf(x, ttl)))}</Text>
+                </Box>
+              )
+            })}
+            <Text dimColor>read / written / new</Text>
+          </Box>
+        )}
+      </Box>
+    )
+  })
+}
