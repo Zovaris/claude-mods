@@ -125,7 +125,13 @@ export function fmtWhen(ms: number, now: number): string {
 
 export const fmtPct = (n: number) => `${n < 10 && n % 1 !== 0 ? n.toFixed(1) : Math.round(n)}%`
 
-/** Five-cell meter for the band. */
+/** How many of `cells` a percentage fills, and how many stay empty. */
+export function meterCells(pct: number, cells = 10): { filled: number; empty: number } {
+  const filled = Math.round((Math.min(100, Math.max(0, pct)) / 100) * cells)
+  return { filled, empty: cells - filled }
+}
+
+/** Text meter (kept for anything that wants one string). */
 export function meter(pct: number, cells = 6): string {
   const n = Math.round((Math.min(100, Math.max(0, pct)) / 100) * cells)
   return '▰'.repeat(n) + '▱'.repeat(cells - n)

@@ -14,7 +14,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { DayMark, Window } from '../types'
-import { dayOf, fmtLeft, fmtPct, fmtWhen, labelOf, meter, paceOf, sortWindows, titleOf, toneOf } from './usage'
+import { dayOf, fmtLeft, fmtPct, fmtWhen, labelOf, meterCells, paceOf, sortWindows, titleOf, toneOf } from './usage'
 
 const PANE = 'usage-bar'
 const windows = atom({ plugin: 'usage-bar', key: 'windows' } as const, [], { shape: 'windows-1' })
@@ -90,6 +90,17 @@ export const register: Register = on => {
     const list = await read($, windows)
     if (e.props.hasSurvey || list.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
+
+    // Solid blocks: the used share in the pace's color, the rest faint.
+    const blocks = (pct: number, cells: number, tone: string) => {
+      const { filled, empty } = meterCells(pct, cells)
+      return (
+        <Text>
+          <Text color={tone}>{'█'.repeat(filled)}</Text>
+          <Text color="subtle">{'█'.repeat(empty)}</Text>
+        </Text>
+      )
+    }
     const now = await $.clock.now()
     return (
       <Box justifyContent="space-between">
@@ -100,7 +111,7 @@ export const register: Register = on => {
             return (
               <Text key={`w:${w.kind}`}>
                 <Text dimColor>{labelOf(w.kind)} </Text>
-                <Text color={tone}>{meter(p.used)}</Text>
+                {blocks(p.used, 10, tone)}
                 <Text> {fmtPct(p.used)}</Text>
                 {p.leftMs !== null && <Text dimColor> · {fmtLeft(p.leftMs)}</Text>}
               </Text>
@@ -115,6 +126,17 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const table = $.ui.resolve(e)
     const { Box, Text, Button } = table
+
+    // Solid blocks: the used share in the pace's color, the rest faint.
+    const blocks = (pct: number, cells: number, tone: string) => {
+      const { filled, empty } = meterCells(pct, cells)
+      return (
+        <Text>
+          <Text color={tone}>{'█'.repeat(filled)}</Text>
+          <Text color="subtle">{'█'.repeat(empty)}</Text>
+        </Text>
+      )
+    }
     const list = await read($, windows)
     const dayMarks = await read($, marks)
     const now = await $.clock.now()
@@ -141,7 +163,7 @@ export const register: Register = on => {
       ) : (
         <Text>
           <Text weight="semibold">{titleOf(w.kind)} </Text>
-          <Text color={tone}>{meter(w.percentUsed, 20)}</Text>
+          {blocks(w.percentUsed, 20, tone)}
           <Text> {fmtPct(w.percentUsed)}</Text>
         </Text>
       )
