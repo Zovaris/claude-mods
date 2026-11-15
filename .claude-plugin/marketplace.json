@@ -4,6 +4,6 @@
   "plugins": [
     { "name": "tool-toggle", "source": "./plugins/tool-toggle" },
     { "name": "cache-control", "source": "./plugins/cache-control" },
-    { "name": "velvet-dusk", "source": "./plugins/velvet-dusk" }
+    { "name": "nebula", "source": "./plugins/nebula" }
   ]
 }

@@ -18,7 +18,7 @@ test('the palette is one Desktop paints', () => {
 test('the look is set at start and its scene drawn on desktop', async ($, on) => {
   mock.store(on)
   const sets: unknown[] = []
-  on('command.register', () => ({ value: { command: 'velvet-dusk' } }))
+  on('command.register', () => ({ value: { command: 'nebula' } }))
   on('theme.set', (_, e) => {
     sets.push(e)
     return { value: { isDrawn: true, requestId: 'backdrop' } }
@@ -28,11 +28,11 @@ test('the look is set at start and its scene drawn on desktop', async ($, on) =>
   expect(sets.length).toBe(1)
 
   const ui = await $.ui.mount({
-    plugin: 'velvet-dusk',
+    plugin: 'nebula',
     component: 'Backdrop',
     requestId: 'backdrop',
     surface: 'desktop',
-    props: { scene: 'velvet-dusk', plugin: 'velvet-dusk', glass: { blur: 24, opacity: 0.72 } },
+    props: { scene: 'nebula', plugin: 'nebula', glass: { blur: 24, opacity: 0.72 } },
   })
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.unmount()

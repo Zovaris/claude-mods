@@ -452,7 +452,7 @@ export const register: Register = (on, options) => {
     )
 
     const heading = (text: string, aside?: string) => (
-      <Box justifyContent="space-between" marginTop={1}>
+      <Box justifyContent="space-between" marginTop={2} marginBottom={1}>
         <Text weight="semibold">{text}</Text>
         {aside !== undefined && (
           <Text size="caption" dimColor>
@@ -487,12 +487,12 @@ export const register: Register = (on, options) => {
           </Text>
         </Box>
         {view.leftMs > 0 && (
-          <Box marginTop={1}>{bar('Expires in', view.leftMs / ttlMs(ttl), fmtClock(view.leftMs), color)}</Box>
+          <Box marginTop={2}>{bar('Expires in', view.leftMs / ttlMs(ttl), fmtClock(view.leftMs), color)}</Box>
         )}
 
         {/* Tiles */}
         {view.kind !== 'none' && (
-          <Box marginTop={1} gap={2}>
+          <Box marginTop={2} gap={3}>
             {tile('ctx', fmtTokens(view.tokens), 'context')}
             {tile('hit', `${Math.round(sessionHit * 100)}%`, 'from cache', sessionHit >= 0.8 ? 'success' : sessionHit >= 0.4 ? 'warning' : 'error')}
             {tile('cold', fmtUsd(view.cost?.cold), 'if sent cold', view.kind === 'cold' ? 'error' : undefined)}
@@ -518,8 +518,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             {heading('Session', `${turns.length} requests`)}
             <Text dimColor>
-              {fmtUsd(spent)} spent, {fmtUsd(without)} without cache · {fmtTokens(tot.write)} written ·{' '}
-              {missed.length ? `${missed.length} miss${missed.length === 1 ? '' : 'es'}` : 'no misses'}
+              {fmtUsd(spent)} spent · {fmtUsd(without)} without cache · {missed.length ? `${missed.length} miss${missed.length === 1 ? "" : "es"}` : "no misses"}
             </Text>
             <Text size="caption" dimColor>
               {view.last?.model ?? ''} · API list prices; on a subscription this is an equivalent, not a charge.
@@ -544,10 +543,10 @@ export const register: Register = (on, options) => {
         </Box>
 
         {/* Guard */}
-        {heading('Confirm cold sends')}
-        <Box justifyContent="space-between" alignItems="center">
-          <Text dimColor>
-            {isGuarded ? `Asks before sending when the cache is cold and the context is ${fmtTokens(guardMin)}+ tokens.` : 'Off: cold sends go out without asking.'}
+        <Box justifyContent="space-between" alignItems="center" marginTop={2} marginBottom={1}>
+          <Text weight="semibold">
+            <Text color={isGuarded ? 'success' : 'inactive'}>● </Text>
+            Confirm cold sends
           </Text>
           <Button
             key="guard"
@@ -561,6 +560,9 @@ export const register: Register = (on, options) => {
             }
           />
         </Box>
+        <Text dimColor>
+          {isGuarded ? `Asks before sending when the cache is cold and the context is ${fmtTokens(guardMin)}+ tokens.` : 'Off: cold sends go out without asking.'}
+        </Text>
 
         {/* Turns */}
         {rows.length > 0 && (

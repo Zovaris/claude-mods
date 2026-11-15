@@ -252,7 +252,7 @@ export const register: Register = on => {
     const toolRow = (g: Group, t: ToolEntry, label: string, indent: number) => {
       const isOn = isGroupOn(g, off) && !off.includes(t.name)
       return (
-        <Box key={`row:${t.name}`} justifyContent="space-between" alignItems="center" paddingLeft={indent} paddingRight={1} hover={{ backgroundColor: 'subtle' }}>
+        <Box key={`row:${t.name}`} justifyContent="space-between" alignItems="center" paddingLeft={indent} paddingRight={1}>
           <Box alignItems="center">
             {dot(isOn ? 'on' : 'off')}
             <Text mono size="footnote" dimColor={!isOn}>
@@ -284,7 +284,7 @@ export const register: Register = on => {
               : null
       return (
         <Box key={`g:${k}`} flexDirection="column">
-          <Box key={`gh:${k}`} justifyContent="space-between" alignItems="center" paddingX={1} hover={{ backgroundColor: 'subtle' }}>
+          <Box key={`gh:${k}`} justifyContent="space-between" alignItems="center" paddingX={1}>
             <Box alignItems="center">
               {dot(isWarn ? 'warn' : isOn ? 'on' : 'off')}
               <Box width={18}>
@@ -310,7 +310,11 @@ export const register: Register = on => {
               <Button key={`srv:${g.prefix}`} label={isOn ? 'Disable' : 'Enable'} onPress={() => void setGroup($, g, !isOn)} />
             )}
           </Box>
-          {isOpen && isOn && g.tools.map(t => toolRow(g, t, shortName(t), 3))}
+          {isOpen && isOn && (
+            <Box flexDirection="column" marginTop={1}>
+              {g.tools.map(t => toolRow(g, t, shortName(t), 3))}
+            </Box>
+          )}
         </Box>
       )
     }
@@ -324,7 +328,7 @@ export const register: Register = on => {
       const onCount = isBuiltin ? items.filter(t => !off.includes(t.name)).length : list.filter(g => isGroupOn(g, off)).length
       const total = isBuiltin ? items.length : list.length
       return (
-        <Box key={`s:${key}`} flexDirection="column" marginTop={1}>
+        <Box key={`s:${key}`} flexDirection="column" marginTop={2}>
           <Box key={`sh:${key}`} justifyContent="space-between" alignItems="center" paddingX={1}>
             <Text weight="semibold">{title}</Text>
             <Box gap={2} alignItems="center">
@@ -337,7 +341,7 @@ export const register: Register = on => {
             </Box>
           </Box>
           {isOpen && (
-            <Box key={`sb:${key}`} flexDirection="column" marginTop={1}>
+            <Box key={`sb:${key}`} flexDirection="column" marginTop={1} rowGap={isBuiltin ? 0 : 1}>
               {isBuiltin ? list.flatMap(g => g.tools.map(t => toolRow(g, t, t.name, 1))) : list.map(groupRow)}
             </Box>
           )}
@@ -371,7 +375,7 @@ export const register: Register = on => {
             <Button key="refresh" variant="secondary" label="Refresh" onPress={() => void refresh($)} />
           </Box>
         </Box>
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={2} flexDirection="column">
           <Input
             key="q"
             placeholder="Search"

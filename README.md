@@ -6,7 +6,7 @@ Mods for Claude Code: a switchboard for tools and connectors, a prompt-cache met
 | --- | --- | --- |
 | [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers and single tools on and off from a pane | `/tools` |
 | [cache-control](plugins/cache-control) | Prompt-cache meter with a countdown, cold-send cost, a confirmation before expensive cold sends, and keep-warm pings | `/cache` |
-| [velvet-dusk](plugins/velvet-dusk) | Velvet Dusk: a soft plum-and-rose look for light and dark, with slow dusk glows behind the conversation | `/velvet-dusk` |
+| [nebula](plugins/nebula) | Nebula: a deep-space look for light and dark, with a starfield, nebula glows and a ringed planet | `/nebula` |
 
 ## Install
 
@@ -15,7 +15,7 @@ At the prompt of a terminal session:
 ```
 /plugin install tool-toggle --marketplace sthbryan/claude-mods
 /plugin install cache-control --marketplace sthbryan/claude-mods
-/plugin install velvet-dusk --marketplace sthbryan/claude-mods
+/plugin install nebula --marketplace sthbryan/claude-mods
 ```
 
 Answer `y` to add the marketplace, then pick a scope. From a shell, use `claude plugin install <mod> --marketplace sthbryan/claude-mods`.
@@ -48,14 +48,14 @@ Options: `ttl` (`auto`, `5m`, `1h`), `guardMinTokens`, `band`, `toast`.
 
 Ideas from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-control (claude-code-templates, MIT).
 
-## velvet-dusk
+## nebula
 
 A look for the desktop and mobile apps, in light and dark:
 
-- **Colors:** plum-tinted grays with a dusty-rose accent; sage, honey, coral and lavender keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so every surface, border and code color follows.
-- **Scene:** large soft glows (lilac, rose, teal) drift slowly at the edges, with faint stars in dark mode. The middle stays clear for the conversation, and the motion stops under reduced motion.
+- **Colors:** deep-space grays with a violet accent; mint, amber, coral and cyan keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so every surface, border and code color follows.
+- **Scene:** a seeded starfield with twinkling stars and a few bright glints, nebula glows drifting at the edges, a ringed planet low on the right, and a shooting star now and then. The middle stays quiet for the conversation, and the motion stops under reduced motion.
 
-`/velvet-dusk off` and `/velvet-dusk on` switch it; the choice is kept. The terminal draws no look. Needs Claude Code 2.1.325 or newer.
+It applies to the Code tab of the desktop app and to the mobile app, from the next session after it's installed. `/nebula off` and `/nebula on` switch it; the choice is kept. Needs Claude Code 2.1.325 or newer.
 
 ## Development
 
