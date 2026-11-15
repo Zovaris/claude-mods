@@ -4,6 +4,6 @@
   "plugins": [
     { "name": "tool-toggle", "source": "./plugins/tool-toggle" },
     { "name": "cache-control", "source": "./plugins/cache-control" },
-    { "name": "tideline", "source": "./plugins/tideline" }
+    { "name": "velvet-dusk", "source": "./plugins/velvet-dusk" }
   ]
 }

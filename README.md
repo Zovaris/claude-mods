@@ -1,12 +1,12 @@
 # claude-mods
 
-Mods for Claude Code: a switchboard for tools and connectors, a prompt-cache meter, and a theme.
+Mods for Claude Code: a switchboard for tools and connectors, a prompt-cache meter, and a look.
 
 | Mod | What it does | Command |
 | --- | --- | --- |
 | [tool-toggle](plugins/tool-toggle) | Turn claude.ai connectors, MCP servers and single tools on and off from a pane | `/tools` |
 | [cache-control](plugins/cache-control) | Prompt-cache meter with a countdown, cold-send cost, a confirmation before expensive cold sends, and keep-warm pings | `/cache` |
-| [tideline](plugins/tideline) | Tideline Night: a dark navy theme with a contour-line backdrop (desktop and mobile apps) | `/tideline` |
+| [velvet-dusk](plugins/velvet-dusk) | Velvet Dusk: a soft plum-and-rose look for light and dark, with slow dusk glows behind the conversation | `/velvet-dusk` |
 
 ## Install
 
@@ -15,7 +15,7 @@ At the prompt of a terminal session:
 ```
 /plugin install tool-toggle --marketplace sthbryan/claude-mods
 /plugin install cache-control --marketplace sthbryan/claude-mods
-/plugin install tideline --marketplace sthbryan/claude-mods
+/plugin install velvet-dusk --marketplace sthbryan/claude-mods
 ```
 
 Answer `y` to add the marketplace, then pick a scope. From a shell, use `claude plugin install <mod> --marketplace sthbryan/claude-mods`.
@@ -48,9 +48,14 @@ Options: `ttl` (`auto`, `5m`, `1h`), `guardMinTokens`, `band`, `toast`.
 
 Ideas from [cache-tax](https://github.com/karanb192/cache-tax) and prompt-cache-control (claude-code-templates, MIT).
 
-## tideline
+## velvet-dusk
 
-A dark navy palette with orange accents (built with the design system's `makeColors`), and a slowly drifting contour-line scene behind the conversation under dark frosted panels. Needs Claude Code 2.1.325 or newer. `/tideline off` and `/tideline on` switch it; the choice is kept. The terminal draws no backdrop.
+A look for the desktop and mobile apps, in light and dark:
+
+- **Colors:** plum-tinted grays with a dusty-rose accent; sage, honey, coral and lavender keep their meaning for success, warning, danger and code. Built with the design system's `makeColors`, so every surface, border and code color follows.
+- **Scene:** large soft glows (lilac, rose, teal) drift slowly at the edges, with faint stars in dark mode. The middle stays clear for the conversation, and the motion stops under reduced motion.
+
+`/velvet-dusk off` and `/velvet-dusk on` switch it; the choice is kept. The terminal draws no look. Needs Claude Code 2.1.325 or newer.
 
 ## Development
 
