@@ -167,11 +167,11 @@ const findGroup = (word: string, gs: Group[]) => {
   return gs.find(g => g.section !== 'builtin' && (g.name.toLowerCase() === w || g.prefix.toLowerCase() === w))
 }
 
-const SECTIONS: { key: Section; title: string; isCollapsible: boolean }[] = [
-  { key: 'connector', title: 'Connectors', isCollapsible: false },
-  { key: 'local', title: 'MCP servers', isCollapsible: false },
-  { key: 'app', title: 'App servers', isCollapsible: true },
-  { key: 'builtin', title: 'Built-in tools', isCollapsible: true },
+const SECTIONS: { key: Section; title: string }[] = [
+  { key: 'connector', title: 'Connectors' },
+  { key: 'local', title: 'MCP servers' },
+  { key: 'app', title: 'App servers' },
+  { key: 'builtin', title: 'Built-in tools' },
 ]
 
 export const register: Register = on => {
@@ -302,51 +302,102 @@ export const register: Register = on => {
       ] ??
       s.source
 
-    const skillRow = (s: SkillEntry) => {
+    // Skills, grouped by where they come from; a plugin's prefix (`plugin:`) is dropped in its group.
+    const skillLabel = (s: SkillEntry) => (s.pluginName && s.name.startsWith(`${s.pluginName}:`) ? s.name.slice(s.pluginName.length + 1) : s.name)
+    const flipSkill = (name: string, turnOn: boolean) =>
+      void save($, o => (turnOn ? o.filter(x => x !== skillKey(name)) : [...o, skillKey(name)]))
+
+    const skillRow = (s: SkillEntry, label: string, indent: number) => {
       const isOn = !off.includes(skillKey(s.name))
       return (
-        <Box key={`skill:${s.name}`} justifyContent="space-between" alignItems="center" paddingLeft={1} paddingRight={1}>
+        <Box key={`skill:${s.name}`} justifyContent="space-between" alignItems="center" paddingLeft={indent} paddingRight={1}>
           <Box alignItems="center">
             <Box width={2}>
               <Text color={isOn ? 'success' : 'inactive'}>●</Text>
             </Box>
             <Text mono size="footnote" dimColor={!isOn}>
-              {s.name}
-            </Text>
-            <Text size="caption" dimColor>
-              {'  '}
-              {sourceOf(s)}
+              {label}
             </Text>
           </Box>
-          <Button
-            key={`sk:${s.name}`}
-            plain
-            dimColor
-            label={isOn ? 'Turn off' : 'Turn on'}
-            onPress={() => void save($, o => (isOn ? [...o, skillKey(s.name)] : o.filter(x => x !== skillKey(s.name))))}
-          />
+          <Button key={`sk:${s.name}`} plain dimColor label={isOn ? 'Turn off' : 'Turn on'} onPress={() => flipSkill(s.name, !isOn)} />
         </Box>
       )
     }
 
-    const skillsSection = () => {
-      if (skillList.length === 0) return null
-      const isOpen = open.includes('section:skills')
-      const onCount = skillList.filter(s => !off.includes(skillKey(s.name))).length
+    const skillGroups = () => {
+      const groups = new Map<string, SkillEntry[]>()
+      for (const sk of skillList) groups.set(sourceOf(sk), [...(groups.get(sourceOf(sk)) ?? []), sk])
+      return [...groups.entries()].sort(([a], [b]) => (a === 'user' ? -1 : b === 'user' ? 1 : a.localeCompare(b)))
+    }
+
+    const skillGroupRow = ([source, items]: [string, SkillEntry[]]) => {
+      const k = `skills:${source}`
+      const isOpen = open.includes(k)
+      const onCount = items.filter(sk => !off.includes(skillKey(sk.name))).length
+      const allOn = onCount === items.length
       return (
-        <Box key="s:skills" flexDirection="column" marginTop={2}>
-          <Box key="sh:skills" justifyContent="space-between" alignItems="center" paddingX={1}>
-            <Text weight="semibold">Skills</Text>
-            <Box gap={2} alignItems="center">
-              <Text size="caption" dimColor>
-                {onCount} of {skillList.length} on
-              </Text>
-              <Button key="section:skills" plain dimColor label={isOpen ? 'Hide' : 'Show'} onPress={() => toggleOpen('section:skills')} />
+        <Box key={`sg:${source}`} flexDirection="column">
+          <Box justifyContent="space-between" alignItems="center" paddingX={1}>
+            <Box alignItems="center">
+              {dot(onCount === 0 ? 'off' : 'on')}
+              <Box width={18}>
+                <Text weight="medium" dimColor={onCount === 0}>
+                  {source}
+                </Text>
+              </Box>
+              <Button
+                key={`exp:${k}`}
+                plain
+                dimColor
+                label={`${onCount === items.length ? plural(items.length, 'skill') : `${onCount} of ${items.length} on`} ${isOpen ? '▾' : '▸'}`}
+                onPress={() => toggleOpen(k)}
+              />
             </Box>
+            <Button
+              key={`all:${k}`}
+              label={allOn ? 'Disable' : 'Enable'}
+              onPress={() =>
+                void save($, o =>
+                  allOn ? [...o, ...items.map(sk => skillKey(sk.name))] : o.filter(x => !items.some(sk => skillKey(sk.name) === x)),
+                )
+              }
+            />
           </Box>
           {isOpen && (
-            <Box key="sb:skills" flexDirection="column" marginTop={1}>
-              {skillList.map(skillRow)}
+            <Box flexDirection="column" marginTop={1}>
+              {items.map(sk => skillRow(sk, skillLabel(sk), 3))}
+            </Box>
+          )}
+        </Box>
+      )
+    }
+
+    // Every section folds; Connectors and MCP servers start open.
+    const startsOpen = (key: string) => key === 'connector' || key === 'local'
+    const isSectionOpen = (key: string) => (startsOpen(key) ? !open.includes(`closed:${key}`) : open.includes(`section:${key}`))
+    const flipSection = (key: string) => toggleOpen(startsOpen(key) ? `closed:${key}` : `section:${key}`)
+
+    const sectionHead = (key: string, title: string, aside: string) => (
+      <Box key={`sh:${key}`} justifyContent="space-between" alignItems="center" paddingX={1}>
+        <Text weight="semibold">{title}</Text>
+        <Box gap={2} alignItems="center">
+          <Text size="caption" dimColor>
+            {aside}
+          </Text>
+          <Button key={`section:${key}`} plain dimColor label={isSectionOpen(key) ? 'Hide' : 'Show'} onPress={() => flipSection(key)} />
+        </Box>
+      </Box>
+    )
+
+    const skillsSection = () => {
+      if (skillList.length === 0) return null
+      const onCount = skillList.filter(sk => !off.includes(skillKey(sk.name))).length
+      return (
+        <Box key="s:skills" flexDirection="column" marginTop={2}>
+          {sectionHead('skills', 'Skills', `${onCount} of ${skillList.length} on`)}
+          {isSectionOpen('skills') && (
+            <Box key="sb:skills" flexDirection="column" marginTop={1} rowGap={1}>
+              {skillGroups().map(skillGroupRow)}
             </Box>
           )}
         </Box>
@@ -440,28 +491,17 @@ export const register: Register = on => {
       )
     }
 
-    const section = (key: Section, title: string, isCollapsible: boolean) => {
+    const section = (key: Section, title: string) => {
       const list = gs.filter(g => g.section === key)
       if (list.length === 0) return null
       const isBuiltin = key === 'builtin'
-      const isOpen = !isCollapsible || open.includes(`section:${key}`)
       const items = isBuiltin ? list.flatMap(g => g.tools) : []
       const onCount = isBuiltin ? items.filter(t => !off.includes(t.name)).length : list.filter(g => isGroupOn(g, off)).length
       const total = isBuiltin ? items.length : list.length
       return (
         <Box key={`s:${key}`} flexDirection="column" marginTop={2}>
-          <Box key={`sh:${key}`} justifyContent="space-between" alignItems="center" paddingX={1}>
-            <Text weight="semibold">{title}</Text>
-            <Box gap={2} alignItems="center">
-              <Text size="caption" dimColor>
-                {onCount} of {total} on
-              </Text>
-              {isCollapsible && (
-                <Button key={`section:${key}`} plain dimColor label={isOpen ? 'Hide' : 'Show'} onPress={() => toggleOpen(`section:${key}`)} />
-              )}
-            </Box>
-          </Box>
-          {isOpen && (
+          {sectionHead(key, title, `${onCount} of ${total} on`)}
+          {isSectionOpen(key) && (
             <Box key={`sb:${key}`} flexDirection="column" marginTop={1} rowGap={isBuiltin ? 0 : 1}>
               {isBuiltin ? list.flatMap(g => g.tools.map(t => toolRow(g, t, t.name, 1))) : list.map(groupRow)}
             </Box>
@@ -516,12 +556,12 @@ export const register: Register = on => {
                 </Text>
               </Box>
             )}
-            {skillResults.slice(0, 40).map(skillRow)}
+            {skillResults.slice(0, 40).map(sk => skillRow(sk, sk.name, 1))}
             {results.slice(0, 80).map(({ g, t }) => toolRow(g, t, `${g.name} · ${shortName(t)}`, 1))}
           </Box>
         ) : (
           <Box flexDirection="column">
-            {SECTIONS.map(s => section(s.key, s.title, s.isCollapsible))}
+            {SECTIONS.map(s => section(s.key, s.title))}
             {skillsSection()}
           </Box>
         )}

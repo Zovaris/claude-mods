@@ -37,7 +37,11 @@ const CHIP_BG: Record<Tone, string> = {
   muted: 'rgba(138,133,151,0.18)',
 }
 
-export type Part = { share: number; tone: Tone }
+/**
+ * One filled part: its share of the track, a tone, and, to go past the five
+ * tones, a raw `hex` for the SVG and a theme key `theme` for the terminal.
+ */
+export type Part = { share: number; tone: Tone; hex?: string; theme?: string }
 
 const clamp = (n: number) => Math.min(1, Math.max(0, n))
 
@@ -51,7 +55,7 @@ export function slimSvg(parts: Part[], marker: number | null, width: number, hei
   for (const p of parts) {
     const w = clamp(p.share) * width
     if (w <= 0) continue
-    fills.push(`<rect x="${x.toFixed(1)}" y="${y}" width="${Math.min(w, width - x).toFixed(1)}" height="${track}" fill="${SVG_TONE[p.tone]}"/>`)
+    fills.push(`<rect x="${x.toFixed(1)}" y="${y}" width="${Math.min(w, width - x).toFixed(1)}" height="${track}" fill="${p.hex ?? SVG_TONE[p.tone]}"/>`)
     x += w
   }
   const mark =
@@ -70,22 +74,22 @@ export function slimSvg(parts: Part[], marker: number | null, width: number, hei
   )
 }
 
-/** The bar in characters for the terminal: runs of `━` per tone, `┃` at the marker. */
-export function slimRuns(parts: Part[], marker: number | null, cells: number): { text: string; tone: Tone | 'empty' | 'mark' }[] {
-  const tones: (Tone | 'empty')[] = []
+/** The bar in characters for the terminal: runs of `━` per color, `┃` at the marker. */
+export function slimRuns(parts: Part[], marker: number | null, cells: number): { text: string; color: string }[] {
+  const colors: string[] = []
   for (const p of parts) {
     const n = Math.round(clamp(p.share) * cells)
-    for (let i = 0; i < n && tones.length < cells; i++) tones.push(p.tone)
+    for (let i = 0; i < n && colors.length < cells; i++) colors.push(p.theme ?? THEME_TONE[p.tone])
   }
-  while (tones.length < cells) tones.push('empty')
+  while (colors.length < cells) colors.push('empty')
   const at = marker === null ? -1 : Math.min(cells - 1, Math.round(clamp(marker) * (cells - 1)))
-  const runs: { text: string; tone: Tone | 'empty' | 'mark' }[] = []
-  tones.forEach((t, i) => {
-    const tone = i === at ? 'mark' : t
+  const runs: { text: string; color: string }[] = []
+  colors.forEach((c, i) => {
+    const color = i === at ? 'mark' : c
     const ch = i === at ? '┃' : '━'
     const last = runs[runs.length - 1]
-    if (last && last.tone === tone) last.text += ch
-    else runs.push({ text: ch, tone })
+    if (last && last.color === color) last.text += ch
+    else runs.push({ text: ch, color })
   })
   return runs
 }
@@ -110,16 +114,16 @@ export function slimBar(
   return (
     <Text key={opts.key}>
       {slimRuns(parts, marker, opts.cells).map((run, i) =>
-        run.tone === 'empty' ? (
+        run.color === 'empty' ? (
           <Text key={`r${i}`} color="subtle">
             {run.text}
           </Text>
-        ) : run.tone === 'mark' ? (
+        ) : run.color === 'mark' ? (
           <Text key={`r${i}`} weight="bold">
             {run.text}
           </Text>
         ) : (
-          <Text key={`r${i}`} color={THEME_TONE[run.tone]}>
+          <Text key={`r${i}`} color={run.color}>
             {run.text}
           </Text>
         ),

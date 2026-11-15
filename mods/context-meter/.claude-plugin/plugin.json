@@ -1,0 +1,7 @@
+{
+  "name": "context-meter",
+  "version": "0.1.0",
+  "description": "What fills your context window, above the prompt and in a pane: categories, memory files, MCP tools, skills and agents, with the auto-compact point and a compact button",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

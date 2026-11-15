@@ -1,13 +1,13 @@
 # claude-mods
 
-Mods and themes for [Claude Code](https://code.claude.com). The mods add features: switch tools, connectors and skills on and off, watch the prompt cache, and pace your plan's usage limits. The themes change how the desktop app looks.
+Mods and themes for [Claude Code](https://code.claude.com). The mods add features: switch tools, connectors and skills on and off, watch the prompt cache and the context window, pace your plan's usage limits, and manage it all from one pane. The themes change how the desktop app looks.
 
 - [What's inside](#whats-inside)
 - [Requirements](#requirements)
 - [Install](#install)
 - [Update and uninstall](#update-and-uninstall)
 - [Where each one works](#where-each-one-works)
-- [Mods](#mods): [tool-toggle](#tool-toggle) · [cache-control](#cache-control) · [usage-bar](#usage-bar)
+- [Mods](#mods): [tool-toggle](#tool-toggle) · [cache-control](#cache-control) · [usage-bar](#usage-bar) · [context-meter](#context-meter) · [mod-manager](#mod-manager)
 - [Themes](#themes): [nebula](#nebula)
 - [Development](#development)
 - [License](#license)
@@ -19,6 +19,8 @@ Mods and themes for [Claude Code](https://code.claude.com). The mods add feature
 | Mod | [tool-toggle](mods/tool-toggle) | Turn connectors, MCP servers, single tools and skills on and off | `/tools` |
 | Mod | [cache-control](mods/cache-control) | Prompt-cache meter, cold-send cost, a confirmation before an expensive cold send, keep-warm | `/cache` |
 | Mod | [usage-bar](mods/usage-bar) | Your 5-hour, weekly and model usage windows, with pace and a daily budget | `/limits` |
+| Mod | [context-meter](mods/context-meter) | What fills the context window, the auto-compact point, and a compact button | `/context-meter` |
+| Mod | [mod-manager](mods/mod-manager) | Every installed mod, theme and plugin: on, off, update, install | `/mods` |
 | Theme | [nebula](themes/nebula) | A soft space look for light and dark, with a nebula behind the conversation | `/nebula` |
 
 Mods live in [`mods/`](mods) and themes in [`themes/`](themes). Install only what you want: each one is its own plugin.
@@ -54,6 +56,14 @@ claude plugin install usage-bar@claude-mods
 ```
 
 ```bash
+claude plugin install context-meter@claude-mods
+```
+
+```bash
+claude plugin install mod-manager@claude-mods
+```
+
+```bash
 claude plugin install nebula@claude-mods
 ```
 
@@ -65,6 +75,8 @@ At the prompt, the same in one line each (answer `y` to add the marketplace, the
 /plugin install tool-toggle --marketplace sthbryan/claude-mods
 /plugin install cache-control --marketplace sthbryan/claude-mods
 /plugin install usage-bar --marketplace sthbryan/claude-mods
+/plugin install context-meter --marketplace sthbryan/claude-mods
+/plugin install mod-manager --marketplace sthbryan/claude-mods
 /plugin install nebula --marketplace sthbryan/claude-mods
 ```
 
@@ -90,7 +102,7 @@ claude plugin update tool-toggle@claude-mods
 claude plugin uninstall nebula@claude-mods
 ```
 
-`claude plugin list` shows what's installed and its version.
+`claude plugin list` shows what's installed and its version. With mod-manager, `/mods` does all of this from a pane.
 
 ## Where each one works
 
@@ -99,6 +111,8 @@ claude plugin uninstall nebula@claude-mods
 | tool-toggle | ✓ | ✓ | In the terminal, claude.ai connectors are blocked rather than switched off: their tools stay listed but can't run. |
 | cache-control | ✓ | ✓ | Bars are drawn in characters in the terminal (`━━━━━━━━━`). |
 | usage-bar | ✓ | ✓ | Same. Needs a Claude subscription: an API key reports no windows. |
+| context-meter | ✓ | ✓ | Same. |
+| mod-manager | ✓ | ✓ | Runs the `claude` command: from your PATH, or the desktop app's own copy on macOS. |
 | nebula | — | ✓ | Themes are drawn by the desktop and mobile apps only. |
 
 The mobile app and VS Code haven't been tested.
@@ -169,6 +183,32 @@ A row above the prompt with each usage window your plan reports: `5h`, `Week`, a
 
 Windows come from the latest API reply and refresh every minute. "Today" starts at the first reading on your local day.
 
+### context-meter
+
+A row above the prompt shows the context window: a slim bar split by what fills it (system prompt, tools, MCP tools, memory files, skills, agents, messages), the share used, a state (**roomy**, **filling**, **getting full**, **compacts soon**, **compacting next**), and a mark where auto-compact kicks in.
+
+`/context-meter` (or **Details**) opens a pane with:
+
+- the window used and what's free before auto-compact;
+- every category with its tokens and share;
+- memory files with their paths;
+- MCP tools per server, with how many are loaded, and a pointer to `/tools` to switch heavy servers off;
+- the skills and agents listings;
+- **Compact now**, with an optional focus for what the summary should keep.
+
+The breakdown is the one `/context` draws, estimated locally after each turn (no extra requests).
+
+### mod-manager
+
+`/mods` opens a pane over everything installed: **Mods**, **Themes** and **Other plugins**, each with its version and marketplace, plus what your marketplaces offer that you haven't installed.
+
+- **Enable** or **Disable** any of them.
+- **Update** when the marketplace has a newer version; **Check for updates** pulls your marketplaces first.
+- **Install** from the **Available** section.
+- After a change, **Reload plugins** loads it in the current session.
+
+It reads Claude Code's own files and writes none: every change goes through the `claude plugin` command. If it can't find the command, the command is copied to your clipboard to run yourself.
+
 ## Themes
 
 Only one theme can be active at a time: the last one set wins. Turn a theme off with its own command.
@@ -213,7 +253,7 @@ claude --plugin-dir mods/cache-control
 
 **Shipping a change.** Installed copies update by version, so raise `version` in the plugin's `plugin.json`, push, then run `claude plugin marketplace update claude-mods` and `claude plugin update <name>@claude-mods`.
 
-`mods/usage-bar/hooks/slim.tsx` and `mods/cache-control/hooks/slim.tsx` are the same file (the slim bar and the state chips). Keep them in sync.
+`hooks/slim.tsx` (the slim bar and the state chips) is the same file in usage-bar, cache-control, context-meter and mod-manager. Keep the copies in sync.
 
 ## Credits
 

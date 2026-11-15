@@ -1,6 +1,6 @@
 {
   "name": "claude-mods",
-  "description": "Claude Code mods: tool and connector switches, a prompt-cache meter, a usage bar, and looks for the desktop app",
+  "description": "Claude Code mods: tool and connector switches, prompt-cache, usage and context meters, a mod manager, and looks for the desktop app",
   "owner": { "name": "Bryan Villafuerte" },
   "plugins": [
     {
@@ -23,6 +23,20 @@
       "description": "Plan usage windows with pace and a daily budget",
       "category": "productivity",
       "keywords": ["mod", "usage", "rate-limits"]
+    },
+    {
+      "name": "context-meter",
+      "source": "./mods/context-meter",
+      "description": "What fills the context window, with the auto-compact point and a compact button",
+      "category": "productivity",
+      "keywords": ["mod", "context", "compact"]
+    },
+    {
+      "name": "mod-manager",
+      "source": "./mods/mod-manager",
+      "description": "/mods: turn mods, themes and plugins on and off, update and install them",
+      "category": "productivity",
+      "keywords": ["mod", "plugins", "manager"]
     },
     {
       "name": "nebula",
