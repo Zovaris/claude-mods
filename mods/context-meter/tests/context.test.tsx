@@ -32,7 +32,7 @@ test('the compaction point and the states', () => {
 
 const engine = (on: On) => {
   mock.store(on)
-  mock.clock(on, { now: 1_800_000_000_000 })
+  const clock = mock.clock(on, { now: 1_800_000_000_000 })
   on('command.register', () => ({ value: { command: 'context-meter' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -64,6 +64,7 @@ const engine = (on: On) => {
       rateLimits: [],
     },
   }) as never)
+  return clock
 }
 
 test('the band and the pane draw on the terminal and desktop', async ($, on) => {
@@ -98,4 +99,44 @@ test('the band and the pane draw on the terminal and desktop', async ($, on) => 
     expect(await pane.find({ key: 'compact' })).toBeDefined()
     await pane.unmount()
   }
+})
+
+const MSG = { role: 'user', text: 'hello', toolUses: [] }
+
+const cmd = (args: string) =>
+  ({ command: 'context-meter', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const
+
+test('the style reaches /compact and Claude Code’s own compaction', async ($, on) => {
+  engine(on)
+  const seen: (string | undefined)[] = []
+  on('session.compact', (_, e) => {
+    seen.push(e.instructions)
+    return { messages: e.messages }
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run(cmd('style handoff'))
+
+  await $.session.compact({ trigger: 'manual', instructions: 'Keep the API decision', messages: [MSG] } as never)
+  await $.session.compact({ trigger: 'auto', messages: [MSG] } as never)
+  expect(seen[0]).toContain('Keep the API decision')
+  expect(seen[0]).toContain('handoff')
+  expect(seen[1]).toContain('handoff')
+})
+
+test('past the threshold, auto mode compacts on its own', async ($, on) => {
+  const clock = engine(on)
+  const triggers: string[] = []
+  on('session.compact', (_, e) => {
+    triggers.push(e.trigger)
+    return { messages: [MSG] as never }
+  })
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run(cmd('auto 30'))
+  await $.command.run(cmd('compact'))
+
+  await $.turn.complete({ turnId: 't1', answer: 'done', durationMs: 10, isAborted: false, reason: 'end_turn' } as never)
+  await clock.advance(2000)
+  expect(triggers.length).toBe(1)
 })

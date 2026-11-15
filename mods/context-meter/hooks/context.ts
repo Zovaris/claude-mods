@@ -2,7 +2,7 @@
  * The pure half of context-meter: colors per category, the compaction point
  * and the state, no `$`.
  */
-import type { Category, Snapshot } from '../types'
+import type { AutoSettings, Category, Snapshot, Style } from '../types'
 import type { Part, Tone } from './slim'
 
 /** A color per category, by what its name says: raw for the SVG, a theme key for text. */
@@ -43,9 +43,9 @@ export function partsOf(s: Snapshot): Part[] {
 export type ContextState = { label: string; tone: Tone }
 
 /** roomy · filling · getting full · compacts soon · over the line */
-export function contextState(s: Snapshot): ContextState {
+export function contextState(s: Snapshot, mark?: number | null): ContextState {
   const used = s.totalTokens / Math.max(1, s.rawMaxTokens)
-  const line = compactAt(s) ?? 1
+  const line = mark ?? compactAt(s) ?? 1
   const toLine = used / line
   if (toLine >= 1) return { label: 'compacting next', tone: 'error' }
   if (toLine >= 0.9) return { label: 'compacts soon', tone: 'error' }
@@ -68,4 +68,52 @@ export function shortPath(path: string, home?: string): string {
   const p = home && path.startsWith(home) ? `~${path.slice(home.length)}` : path
   const parts = p.split('/')
   return parts.length > 4 ? `…/${parts.slice(-3).join('/')}` : p
+}
+
+// ---- auto-compact -------------------------------------------------------------
+
+
+export const DEFAULT_AUTO: AutoSettings = { threshold: null, mode: 'ask', style: 'default', custom: '', everywhere: true }
+
+export const STYLES: { value: Style; label: string; text: string }[] = [
+  { value: 'default', label: 'Claude Code default', text: '' },
+  {
+    value: 'handoff',
+    label: 'Handoff',
+    text:
+      'Write the summary as a handoff to someone picking this work up cold: the goal, what is done, decisions made and why, ' +
+      'open questions, the exact file paths and commands that matter, and the next three steps.',
+  },
+  {
+    value: 'code',
+    label: 'Keep the code details',
+    text:
+      'Keep every file path, function and type name, error message and command verbatim. ' +
+      'Drop chit-chat, superseded attempts and anything already resolved.',
+  },
+  { value: 'custom', label: 'Your own', text: '' },
+]
+
+/** The instructions a style adds to a compaction; empty for the default. */
+export function styleText(a: AutoSettings): string {
+  if (a.style === 'custom') return a.custom.trim()
+  return STYLES.find(s => s.value === a.style)?.text ?? ''
+}
+
+/** Joins a focus given for this compaction with the style's standing text. */
+export function joinInstructions(focus: string | undefined, a: AutoSettings): string | undefined {
+  const parts = [focus?.trim(), styleText(a)].filter((x): x is string => !!x)
+  return parts.length ? parts.join('\n\n') : undefined
+}
+
+/** Whether the window has crossed the mod's threshold (or a snooze above it). */
+export function isDue(s: Snapshot, a: AutoSettings, snooze: number): boolean {
+  if (a.threshold === null) return false
+  const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
+  return used >= Math.max(a.threshold, snooze)
+}
+
+/** The mark on the bar: the mod's threshold when set, else Claude Code's own. */
+export function markOf(s: Snapshot, a: AutoSettings): number | null {
+  return a.threshold !== null ? a.threshold / 100 : compactAt(s)
 }

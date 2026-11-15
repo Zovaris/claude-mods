@@ -12,8 +12,23 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Named, Snapshot } from '../types'
-import { bufferTokens, compactAt, contextState, fmtTokens, partsOf, pct, shortPath, styleOf, usedCategories } from './context'
+import type { AutoSettings, Named, Snapshot, Style } from '../types'
+import {
+  bufferTokens,
+  compactAt,
+  contextState,
+  DEFAULT_AUTO,
+  fmtTokens,
+  isDue,
+  joinInstructions,
+  markOf,
+  partsOf,
+  pct,
+  shortPath,
+  STYLES,
+  styleOf,
+  usedCategories,
+} from './context'
 import { chip, slimBar } from './slim'
 
 const PANE = 'context-meter'
@@ -21,8 +36,16 @@ const snapshot = atom({ plugin: 'context-meter', key: 'snapshot' } as const, nul
 const focus = atom({ plugin: 'context-meter', key: 'focus' } as const, '', { shape: 'focus-1' })
 const open = atom({ plugin: 'context-meter', key: 'open' } as const, ['categories'], { shape: 'open-1' })
 const busy = atom({ plugin: 'context-meter', key: 'busy' } as const, false, { shape: 'busy-1' })
+const auto = atom({ plugin: 'context-meter', key: 'auto' } as const, DEFAULT_AUTO, { shape: 'auto-1' })
+const snooze = atom({ plugin: 'context-meter', key: 'snooze' } as const, 0, { shape: 'snooze-1' })
 
 let home: string | undefined
+let isAsking = false
+
+const setAuto = async ($: EngineInterface, fn: (a: AutoSettings) => AutoSettings) => {
+  await update($, auto, fn)
+  await $.store.set('auto', await read($, auto))
+}
 
 async function refresh($: EngineInterface) {
   const usage = await $.session.usage({ breakdown: 'summary' }).catch(() => undefined)
@@ -62,14 +85,15 @@ async function refresh($: EngineInterface) {
 
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: 'Context' })
 
-async function compact($: EngineInterface) {
+/** Compacts now; the style is added by the session.compact hook below. */
+async function compact($: EngineInterface, given?: string, note = 'Compacted.') {
   if (await read($, busy)) return
   await update($, busy, () => true)
   try {
-    const instructions = (await read($, focus)).trim()
+    const instructions = (given ?? (await read($, focus))).trim()
     const r = await $.session.compact(instructions ? { instructions } : undefined)
     if ('skip' in r && r.skip) $.ui.toast(`Not compacted: ${r.skip}`)
-    else $.ui.toast('Compacted.')
+    else $.ui.toast(note)
     await update($, focus, () => '')
   } catch (err) {
     $.ui.toast(`Couldn't compact: ${String(err)}`)
@@ -79,30 +103,96 @@ async function compact($: EngineInterface) {
   }
 }
 
+/** The window crossed the threshold: compact, or ask first. */
+async function decide($: EngineInterface) {
+  if (isAsking || (await read($, busy))) return
+  const s = await read($, snapshot)
+  const a = await read($, auto)
+  if (!s || !isDue(s, a, await read($, snooze))) return
+  const used = Math.round((s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100)
+  if (a.mode === 'auto') {
+    await compact($, '', `Auto-compacted at ${used}% (your threshold is ${a.threshold}%).`)
+    return
+  }
+  isAsking = true
+  try {
+    const now = 'Compact now'
+    const later = `Ask again at ${Math.min(95, used + 10)}%`
+    const off = 'Not this session'
+    const answer = await $.ui.ask(
+      `The context is at ${used}% (${fmtTokens(s.totalTokens)} tokens), past your ${a.threshold}% threshold. Compact now? Type under Other what the summary should keep.`,
+      { options: [now, later, off], header: 'Context' },
+    )
+    if (answer === now) await compact($, '', `Compacted at ${used}%.`)
+    else if (answer === later) await update($, snooze, () => Math.min(95, used + 10))
+    else if (answer === off) await update($, snooze, () => 101)
+    else await compact($, answer, `Compacted at ${used}%, keeping what you asked.`)
+  } catch {
+    // Dismissed: ask again five points on.
+    await update($, snooze, () => Math.min(95, used + 5))
+  } finally {
+    isAsking = false
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     home = await $.env.get('HOME').catch(() => undefined)
+    const stored = await $.store.get('auto')
+    if (stored && typeof stored === 'object') await update($, auto, () => ({ ...DEFAULT_AUTO, ...(stored as Partial<AutoSettings>) }))
     await $.command
       .register({ name: 'context-meter', description: 'What fills the context window, and a compact button' })
       .catch(err => $.ui.log(`context-meter: command not registered: ${String(err)}`, { to: 'debug' }))
-    void refresh($)
+    void refresh($).catch(() => undefined)
     return r
   })
 
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
+    // Measure, then decide once the turn has let go of the session.
     void refresh($)
+      .then(() => $.clock.after(1200, () => void decide($).catch(() => undefined)))
+      .catch(() => undefined)
     return r
   })
 
+  // Every compaction of the main conversation gets the chosen style: ours
+  // always, /compact and Claude Code's own when `everywhere` is on.
   on('session.compact', async ($, e, next) => {
-    const r = await next(e)
-    void refresh($)
+    if (e.agentId || e.trigger === 'precompute') return next(e)
+    const a = await read($, auto)
+    const isOurs = e.trigger === 'plugin'
+    const instructions = isOurs || a.everywhere ? joinInstructions(e.instructions, a) : e.instructions
+    const r = await next(instructions === e.instructions ? e : { ...e, instructions })
+    await update($, snooze, () => 0)
+    void refresh($).catch(() => undefined)
     return r
   })
 
-  on('command.run', { command: 'context-meter' }, async $ => {
+  on('command.run', { command: 'context-meter' }, async ($, e) => {
+    const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/)
+    if (verb === 'auto') {
+      if (arg === 'off') {
+        await setAuto($, a => ({ ...a, threshold: null }))
+        return { text: 'Auto-compact: off.' }
+      }
+      const n = Number.parseInt(arg, 10)
+      if (!Number.isFinite(n) || n < 5 || n > 95) return { text: 'Usage: /context-meter auto 50 (5 to 95) · /context-meter auto off' }
+      await setAuto($, a => ({ ...a, threshold: n }))
+      await update($, snooze, () => 0)
+      return { text: `Auto-compact at ${n}% of the window.` }
+    }
+    if (verb === 'ask' || verb === 'compact') {
+      await setAuto($, a => ({ ...a, mode: verb === 'ask' ? 'ask' : 'auto' }))
+      return { text: verb === 'ask' ? 'At the threshold, it will ask first.' : 'At the threshold, it will compact without asking.' }
+    }
+    if (verb === 'style') {
+      const style = STYLES.find(s => s.value === arg)
+      if (!style) return { text: `Styles: ${STYLES.map(s => s.value).join(', ')}` }
+      await setAuto($, a => ({ ...a, style: style.value }))
+      return { text: `Compact style: ${style.label}.` }
+    }
     await refresh($)
     await openPane($)
     return { text: 'Context pane opened.' }
@@ -113,8 +203,9 @@ export const register: Register = on => {
     if (e.props.hasSurvey || !s) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
-    const line = compactAt(s)
-    const state = contextState(s)
+    const a = await read($, auto)
+    const line = markOf(s, a)
+    const state = contextState(s, line)
     return (
       <Box justifyContent="space-between" alignItems="center">
         <Box gap={1} alignItems="center">
@@ -123,7 +214,7 @@ export const register: Register = on => {
           <Text>{pct(used)}</Text>
           {chip($, e, state.label, state.tone)}
           <Text dimColor>
-            {`${fmtTokens(s.totalTokens)} of ${fmtTokens(s.rawMaxTokens)}${line !== null ? ` · compacts at ${pct(line * 100)}` : ''}`}
+            {`${fmtTokens(s.totalTokens)} of ${fmtTokens(s.rawMaxTokens)}${line !== null ? ` · ${a.threshold !== null ? 'auto-compact' : 'compacts'} at ${pct(line * 100)}` : ''}`}
           </Text>
         </Box>
         <Button key="details" plain dimColor label="Details" onPress={() => void openPane($)} />
@@ -132,7 +223,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const { Box, Text, Button, Input, Select } = $.ui.resolve(e)
     const s = await read($, snapshot)
     const opened = await read($, open)
     const isBusy = await read($, busy)
@@ -153,8 +244,11 @@ export const register: Register = on => {
     }
 
     const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
-    const line = compactAt(s)
-    const state = contextState(s)
+    const a = await read($, auto)
+    const snoozed = await read($, snooze)
+    const native = compactAt(s)
+    const line = markOf(s, a)
+    const state = contextState(s, line)
     const free = Math.max(0, s.rawMaxTokens - bufferTokens(s) - s.totalTokens)
     const toggle = (k: string) => void update($, open, o => (o.includes(k) ? o.filter(x => x !== k) : [...o, k]))
 
@@ -224,7 +318,9 @@ export const register: Register = on => {
         {line !== null && (
           <Box marginTop={1}>
             <Text size="caption" dimColor>
-              The mark is where auto-compact kicks in ({pct(line * 100)} of the window).
+              {a.threshold !== null
+                ? `The mark is your auto-compact at ${a.threshold}%${native !== null ? `; Claude Code's own is at ${pct(native * 100)}` : ''}.`
+                : `The mark is where Claude Code auto-compacts (${pct(line * 100)} of the window).`}
             </Text>
           </Box>
         )}
@@ -253,6 +349,89 @@ export const register: Register = on => {
             row('skills', null, `${s.skills.count} skills listed`, fmtTokens(s.skills.tokens)),
             ...s.agents.map(a => row(`agent:${a.name}`, null, a.name, fmtTokens(a.tokens), a.detail)),
           ])}
+
+        {/* Auto-compact: when, how it asks, and the summary's style. */}
+        <Box flexDirection="column" marginTop={2}>
+          <Box justifyContent="space-between" alignItems="center">
+            <Text weight="semibold">Auto-compact</Text>
+            <Text size="caption" dimColor>
+              {a.threshold === null
+                ? 'off'
+                : snoozed > 100
+                  ? 'paused for this session'
+                  : snoozed > a.threshold
+                    ? `asks again at ${snoozed}%`
+                    : `at ${a.threshold}%`}
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Compact earlier than Claude Code does, at a share of the window you pick.</Text>
+          </Box>
+          <Box marginTop={1} gap={1}>
+            {[null, 20, 35, 50, 65, 80].map(n => (
+              <Button
+                key={`th:${n ?? 'off'}`}
+                variant={a.threshold === n ? 'primary' : 'secondary'}
+                label={n === null ? 'Off' : `${n}%`}
+                onPress={() =>
+                  void (async () => {
+                    await setAuto($, x => ({ ...x, threshold: n }))
+                    await update($, snooze, () => 0)
+                  })()
+                }
+              />
+            ))}
+          </Box>
+          {a.threshold !== null && (
+            <Box marginTop={1} flexDirection="column">
+              <Select
+                key="mode"
+                label="When it's reached"
+                value={a.mode}
+                options={[
+                  { value: 'ask', label: 'Ask me first' },
+                  { value: 'auto', label: 'Compact without asking' },
+                ]}
+                onSelect={v => void setAuto($, x => ({ ...x, mode: v === 'auto' ? 'auto' : 'ask' }))}
+              />
+            </Box>
+          )}
+          <Box marginTop={1} flexDirection="column">
+            <Select
+              key="style"
+              label="Summary style"
+              value={a.style}
+              options={STYLES.map(st => ({ value: st.value, label: st.label }))}
+              onSelect={v => void setAuto($, x => ({ ...x, style: v as Style }))}
+            />
+          </Box>
+          {a.style === 'custom' && (
+            <Box marginTop={1} flexDirection="column">
+              <Input
+                key="custom"
+                rows={3}
+                placeholder="Write the summary as a handoff: goal, decisions, files, next steps"
+                value={a.custom}
+                onInput={v => void setAuto($, x => ({ ...x, custom: v }))}
+                onSubmit={v => void setAuto($, x => ({ ...x, custom: v }))}
+              />
+            </Box>
+          )}
+          {a.style !== 'default' && (
+            <Box marginTop={1} justifyContent="space-between" alignItems="center">
+              <Text dimColor>
+                {a.everywhere ? 'Also used by /compact and Claude Code’s own auto-compact.' : 'Only used when this mod compacts.'}
+              </Text>
+              <Button
+                key="everywhere"
+                plain
+                dimColor
+                label={a.everywhere ? 'Only here' : 'Use everywhere'}
+                onPress={() => void setAuto($, x => ({ ...x, everywhere: !x.everywhere }))}
+              />
+            </Box>
+          )}
+        </Box>
 
         <Box flexDirection="column" marginTop={2}>
           <Text weight="semibold">Compact</Text>

@@ -27,7 +27,7 @@
     {
       "name": "context-meter",
       "source": "./mods/context-meter",
-      "description": "What fills the context window, with the auto-compact point and a compact button",
+      "description": "What fills the context window, with your own auto-compact threshold and summary style",
       "category": "productivity",
       "keywords": ["mod", "context", "compact"]
     },

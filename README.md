@@ -19,7 +19,7 @@ Mods and themes for [Claude Code](https://code.claude.com). The mods add feature
 | Mod | [tool-toggle](mods/tool-toggle) | Turn connectors, MCP servers, single tools and skills on and off | `/tools` |
 | Mod | [cache-control](mods/cache-control) | Prompt-cache meter, cold-send cost, a confirmation before an expensive cold send, keep-warm | `/cache` |
 | Mod | [usage-bar](mods/usage-bar) | Your 5-hour, weekly and model usage windows, with pace and a daily budget | `/limits` |
-| Mod | [context-meter](mods/context-meter) | What fills the context window, the auto-compact point, and a compact button | `/context-meter` |
+| Mod | [context-meter](mods/context-meter) | What fills the context window, your own auto-compact threshold and summary style | `/context-meter` |
 | Mod | [mod-manager](mods/mod-manager) | Every installed mod, theme and plugin: on, off, update, install | `/mods` |
 | Theme | [nebula](themes/nebula) | A soft space look for light and dark, with a nebula behind the conversation | `/nebula` |
 
@@ -196,7 +196,23 @@ A row above the prompt shows the context window: a slim bar split by what fills 
 - the skills and agents listings;
 - **Compact now**, with an optional focus for what the summary should keep.
 
-The breakdown is the one `/context` draws, estimated locally after each turn (no extra requests).
+**Auto-compact, your way.** Claude Code compacts on its own near the end of the window. context-meter adds:
+
+- **A threshold of your own:** compact at 20%, 35%, 50%, 65% or 80% of the window, well before Claude Code would.
+- **Ask first, or don't:** at the threshold it asks whether to compact now, ask again 10 points later, or leave it for this session, and anything typed under **Other** becomes the summary's focus. Or it compacts without asking.
+- **A summary style:** *Handoff* (goal, decisions and why, files, next steps), *Keep the code details* (paths, names, errors and commands verbatim), or your own text. By default the style also applies to `/compact` and Claude Code's own auto-compact.
+
+From the prompt:
+
+```
+/context-meter auto 50        compact at 50% of the window
+/context-meter auto off       turn it off
+/context-meter ask            ask first at the threshold
+/context-meter compact        compact without asking
+/context-meter style handoff  default, handoff, code or custom
+```
+
+The breakdown is the one `/context` draws, estimated locally after each turn (no extra requests). Settings are kept across sessions.
 
 ### mod-manager
 
