@@ -18,10 +18,13 @@ Or from `/mods`, if you have [mod-manager](../../mods/mod-manager). It loads in 
 
 A slim bar of what the last request read, wrote and sent new; the hit rate; a state; the time left; and what a cold send would cost now.
 
+The time left changes color as it runs out: plain over half its lifetime, amber under half, amber with ⚠ under a quarter, and red with ⚠ in the last minutes and once it has expired, when it shows how long ago.
+
 | State | Meaning |
 | --- | --- |
 | warm | the cache is alive and was read |
-| expiring | close to expiring: the last 5 minutes of a 1-hour cache, the last minute of a 5-minute one |
+| cooling | under a quarter of its lifetime left |
+| expiring | the last 5 minutes of a 1-hour cache, the last minute of a 5-minute one |
 | missed | the last request rewrote what it should have read |
 | cold | the cache has expired; the next send pays full price |
 | compacted | the conversation was just compacted |
@@ -34,7 +37,8 @@ A slim bar of what the last request read, wrote and sent new; the hit rate; a st
 
 ## Features
 
-- **Confirm cold sends.** With the cache expired and a context of 50k tokens or more, it asks before your message goes out, with the cost. `/cache guard off` turns it off.
+- **Confirm cold sends.** With the cache expired and a context of 50k tokens or more, it asks before your message goes out: how long ago it expired, how many tokens go out uncached, and what that costs against a warm cache. `/cache guard off` turns it off.
+- **In your language.** The question and the expiry warning follow Claude Code's `language` setting, then your system locale: English, Spanish, Portuguese and French.
 - **Keep warm.** `/cache warm 2h` pings the cache shortly before it expires while you're idle (10 minutes before for a 1-hour cache, 1 minute for a 5-minute one). It stops by itself if the cache had already gone cold. `/cache warm off` stops it.
 - **Cache lifetime.** Follows Claude Code's own rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account) and corrects itself from request timing.
 

@@ -23,9 +23,11 @@ import {
   cacheState,
   costOf,
   decideTtl,
+  fmtAgo,
   fmtClock,
   fmtTokens,
   fmtUsd,
+  heatOf,
   hitRatio,
   missReason,
   observeTtl,
@@ -37,6 +39,8 @@ import {
   viewOf,
 } from './cache'
 import type { Account, CacheEnv, Ttl, View } from './cache'
+import { langOf, STRINGS } from './i18n'
+import type { Lang } from './i18n'
 import { chip, slimBar, THEME_TONE } from './slim'
 
 const PANE = 'cache-control'
@@ -62,6 +66,7 @@ let ticker: { cancel: () => void } | undefined
 let lastKey = ''
 let toastedFor = 0
 let isBusy = false
+let lang: Lang = 'en'
 let isPinging = false
 let nextPingAt = 0
 
@@ -171,9 +176,7 @@ async function tick($: EngineInterface, wantToast: boolean) {
   const last = view.last
   if (wantToast && last && view.kind === 'soon' && view.tokens >= TOAST_MIN && warm <= now && toastedFor !== last.startedAt) {
     toastedFor = last.startedAt
-    $.ui.toast(
-      `The cache expires in ${fmtClock(view.leftMs)}: any message renews it; otherwise rewriting ${fmtTokens(view.tokens)} will cost ~${fmtUsd(view.cost?.cold)}.`,
-    )
+    $.ui.toast(STRINGS[lang].expiring({ left: fmtClock(view.leftMs), tokens: fmtTokens(view.tokens), cold: fmtUsd(view.cost?.cold) }))
   }
 
   if (warm > now && !isBusy && !isPinging && now >= nextPingAt && (view.kind === 'warm' || view.kind === 'soon')) {
@@ -217,6 +220,12 @@ export const register: Register = (on, options) => {
       disableAll: await $.env.get('DISABLE_PROMPT_CACHING').catch(none),
     }
     setting = await readSettingTtl($)
+    const language = await $.settings.read({ key: 'language' }).catch(() => undefined)
+    lang = langOf(
+      typeof language === 'string' ? language : undefined,
+      await $.env.get('LC_ALL').catch(() => undefined),
+      await $.env.get('LANG').catch(() => undefined),
+    )
     await refreshAccount($, options.ttl)
     const stored = await $.store.get('guard')
     if (typeof stored === 'boolean') await update($, guard, () => stored)
@@ -291,17 +300,17 @@ export const register: Register = (on, options) => {
     if (isPerson && (await read($, guard))) {
       const { view } = await snapshot($)
       if (view.kind === 'cold' && view.tokens >= guardMin && view.cost) {
+        const t = STRINGS[lang]
         const cold = fmtUsd(view.cost.cold)
-        const warm = fmtUsd(view.cost.warm)
-        const send = `Send anyway (~${cold})`
+        const send = t.send(cold)
         try {
           const answer = await $.ui.ask(
-            `The cache expired: this message rewrites ${fmtTokens(view.tokens)} tokens (~${cold} at API prices, vs ~${warm} warm). Send it?`,
-            { options: [send, 'Don\'t send'], header: 'Cold cache' },
+            t.question({ tokens: fmtTokens(view.tokens), cold, warm: fmtUsd(view.cost.warm), ago: fmtAgo(view.coldForMs ?? 0) }),
+            { options: [send, t.hold], header: t.header },
           )
-          if (answer !== send) return { drop: 'Not sent: the cache was cold. Try /compact or /clear, or send it again.' }
+          if (answer !== send) return { drop: t.held }
         } catch {
-          return { drop: 'Not sent: the cache was cold and nobody confirmed.' }
+          return { drop: t.heldUnanswered }
         }
       }
     }
@@ -352,15 +361,18 @@ export const register: Register = (on, options) => {
     const hit = hitRatio(last)
     const total = Math.max(1, promptTokens(last))
     const state = cacheState(view)
+    const heat = heatOf(view)
     const advice =
       view.kind === 'warm'
         ? view.miss
           ? `missed: ${view.miss}`
-          : `keep going · a cold send would cost ~${fmtUsd(view.cost?.cold)}`
+          : heat.isAlert
+            ? `cooling · a message in the next ${fmtClock(view.leftMs)} keeps it warm · cold it costs ~${fmtUsd(view.cost?.cold)}`
+            : `keep going · a cold send would cost ~${fmtUsd(view.cost?.cold)}`
         : view.kind === 'soon'
-          ? `any message renews it for free · cold it costs ~${fmtUsd(view.cost?.cold)}`
+          ? `send something to renew it for free · once cold it costs ~${fmtUsd(view.cost?.cold)}`
           : view.kind === 'cold'
-            ? `the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)} vs ~${fmtUsd(view.cost?.warm)} warm) · /compact or /clear first`
+            ? `the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)} vs ~${fmtUsd(view.cost?.warm)} warm) · /clear starts fresh for less`
             : view.kind === 'compacted'
               ? 'the next message starts from the summary'
               : 'prompt under the model minimum, or caching off'
@@ -383,7 +395,17 @@ export const register: Register = (on, options) => {
             )}
             <Text>{Math.round(hit * 100)}%</Text>
             {chip($, e, state.label, state.tone)}
-            {view.leftMs > 0 && <Text dimColor>{fmtClock(view.leftMs)} of {ttl}</Text>}
+            {view.leftMs > 0 ? (
+              <Text>
+                {heat.isAlert && <Text color={heat.tone}>⚠ </Text>}
+                <Text color={heat.tone === 'muted' ? undefined : heat.tone} dimColor={heat.tone === 'muted'}>
+                  {fmtClock(view.leftMs)}
+                </Text>
+                <Text dimColor> of {ttl}</Text>
+              </Text>
+            ) : (
+              view.kind === 'cold' && <Text color="error">⚠ expired {fmtAgo(view.coldForMs ?? 0)} ago</Text>
+            )}
             {warm > now && chip($, e, `kept warm ${fmtClock(warm - now)}`, 'cool')}
             <Text>
               <Text dimColor>  read </Text>
@@ -396,7 +418,10 @@ export const register: Register = (on, options) => {
           </Box>
           <Button key="details" plain dimColor label="Details" onPress={() => void $.ui.open({ id: PANE, title: 'Cache' })} />
         </Box>
-        <Text dimColor={view.kind === 'warm' && !view.miss} color={view.kind === 'cold' || view.miss ? 'error' : undefined}>
+        <Text
+          dimColor={view.kind === 'warm' && !view.miss && !heat.isAlert}
+          color={view.kind === 'cold' || view.kind === 'soon' || view.miss ? 'error' : heat.isAlert ? 'warning' : undefined}
+        >
           {advice}
         </Text>
       </Box>
@@ -427,7 +452,9 @@ export const register: Register = (on, options) => {
     const sessionHit = totalPrompt ? tot.read / totalPrompt : 0
     const missed = turns.filter((x, i) => i > 0 && missReason(turns[i - 1], x, ttl) !== undefined)
 
-    const color = { warm: 'success', soon: 'warning', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
+    const heat = heatOf(view)
+    const color =
+      view.kind === 'warm' ? (heat.tone === 'muted' ? 'success' : heat.tone) : { soon: 'error', cold: 'error', compacted: 'inactive', uncached: 'inactive', none: 'inactive' }[view.kind]
     const title = { warm: 'Warm', soon: 'Expiring soon', cold: 'Cold', compacted: 'Compacted', uncached: 'Not cached', none: 'No requests yet' }[
       view.kind
     ]
@@ -505,7 +532,7 @@ export const register: Register = (on, options) => {
           <Box marginTop={2} flexDirection="column">
             <Box justifyContent="space-between">
               <Text dimColor>Expires in</Text>
-              <Text color={color}>{fmtClock(view.leftMs)}</Text>
+              <Text color={color}>{`${heat.isAlert ? '⚠ ' : ''}${fmtClock(view.leftMs)}`}</Text>
             </Box>
             <Box marginTop={1}>
               {slimBar($, e, [{ share: view.leftMs / ttlMs(ttl), tone: cacheState(view).tone }], null, {

@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { missReason, parseDuration, sendCost, viewOf } from '../hooks/cache'
+import { cacheState, heatOf, missReason, parseDuration, sendCost, viewOf } from '../hooks/cache'
+import { langOf } from '../hooks/i18n'
 import type { Sample } from '../types'
 
 const T0 = 1_800_000_000_000
@@ -40,6 +41,27 @@ test('miss causes', () => {
   expect(missReason(prev, big(T0 + 60_000), '1h')).toBeUndefined()
 })
 
+test('the time left goes from calm to amber to red', () => {
+  const s = [big(T0)]
+  const at = (min: number) => viewOf(s, '1h', T0 + min * 60_000, 0)
+  expect(heatOf(at(10))).toEqual({ tone: 'muted', isAlert: false })
+  expect(heatOf(at(35))).toEqual({ tone: 'warning', isAlert: false })
+  expect(heatOf(at(50))).toEqual({ tone: 'warning', isAlert: true })
+  expect(cacheState(at(50)).label).toBe('cooling')
+  expect(heatOf(at(57))).toEqual({ tone: 'error', isAlert: true })
+  expect(cacheState(at(57))).toEqual({ label: 'expiring', tone: 'error' })
+  expect(heatOf(at(70))).toEqual({ tone: 'error', isAlert: true })
+  expect(at(70).coldForMs).toBe(10 * 60_000)
+})
+
+test('the alert language: the setting, then the locale, else English', () => {
+  expect(langOf('spanish', 'en_US.UTF-8')).toBe('es')
+  expect(langOf(undefined, undefined, 'es_MX.UTF-8')).toBe('es')
+  expect(langOf(undefined, 'C', 'pt_BR.UTF-8')).toBe('pt')
+  expect(langOf('Français')).toBe('fr')
+  expect(langOf('klingon', undefined)).toBe('en')
+})
+
 test('durations', () => {
   expect(parseDuration('90m')).toBe(90 * 60_000)
   expect(parseDuration('2h30m')).toBe(150 * 60_000)
@@ -69,7 +91,7 @@ test('a cold send of a large context is held, unless the guard is off', async ($
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
 
   const held = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
-  expect(held.drop).toContain('cold')
+  expect(held.drop).toContain('expired')
 
   await $.command.run(run('guard off'))
   const sent = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
@@ -110,4 +132,29 @@ test('the band and the pane draw on the terminal and desktop', async ($, on) => 
     expect(await pane.find({ key: 'guard' })).toBeDefined()
     await pane.unmount()
   }
+})
+
+test('the cold-send question speaks the person\'s language, with tokens, cost and how long ago', async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: T0 + 70 * 60_000 })
+  on('command.register', () => ({ value: { command: 'cache' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: T0, context: { window: 1_000_000 }, rateLimits: [] } }))
+  on('state.get', ($, e, next) =>
+    e.key === 'samples' ? { value: { value: { shape: 'samples-1', value: [big(T0)] }, version: 1 } } : next(e),
+  )
+  on('env.get', (_, e) => ({ value: e.name === 'LANG' ? 'es_MX.UTF-8' : undefined }) as never)
+  const asked: string[] = []
+  on('tool.call', (_, e) => {
+    asked.push(JSON.stringify(e))
+    return { deny: 'dismissed' }
+  })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const held = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
+  expect(held.drop).toContain('No se envió')
+  expect(asked[0]).toMatch(/venció hace \d/)
+  expect(asked[0]).toContain('Caché fría')
+  expect(asked[0]).toContain('200k tokens')
+  expect(asked[0]).toContain('Enviar igual')
 })

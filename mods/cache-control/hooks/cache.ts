@@ -116,6 +116,10 @@ export type View = {
   kind: Kind
   last?: Sample
   leftMs: number
+  /** The share of the cache's lifetime left, 0 to 1. */
+  left?: number
+  /** How long ago it went cold, when it has. */
+  coldForMs?: number
   tokens: number
   miss?: string
   cost?: { cold: number; warm: number } | null
@@ -135,9 +139,10 @@ export function viewOf(samples: readonly Sample[], ttl: Ttl, now: number, compac
   if (compactedAt > last.startedAt) return { kind: 'compacted', last, leftMs: 0, tokens, cost }
   if (last.read + last.write === 0) return { kind: 'uncached', last, leftMs: 0, tokens, cost }
   // the newest request that touched the cache, ping or turn, sets the clock
-  const leftMs = Math.max(0, last.startedAt + ttlMs(ttl) - now)
+  const endsAt = last.startedAt + ttlMs(ttl)
+  const leftMs = Math.max(0, endsAt - now)
   const kind: Kind = leftMs === 0 ? 'cold' : leftMs <= SOON_MS[ttl] ? 'soon' : 'warm'
-  return { kind, last, leftMs, tokens, miss, cost }
+  return { kind, last, leftMs, left: leftMs / ttlMs(ttl), coldForMs: Math.max(0, now - endsAt), tokens, miss, cost }
 }
 
 // ---- formatting ---------------------------------------------------------------
@@ -176,18 +181,45 @@ export function parseDuration(text: string): number | null {
 
 export type CacheState = { label: string; tone: 'success' | 'warning' | 'error' | 'muted' }
 
+/** Under this share of its lifetime left, a warm cache reads as cooling. */
+export const COOLING = 0.25
+
 /**
  * The cache in a word, for the chip:
- *   warm · expiring (inside the last minute of a 5m cache, five of a 1h one)
+ *   warm · cooling (under a quarter of its life left)
+ *   expiring (inside the last minute of a 5m cache, five of a 1h one)
  *   missed (the last request wrote what it should have read)
  *   cold · compacted · not cached
  */
 export function cacheState(v: View): CacheState {
   if (v.kind === 'cold') return { label: 'cold', tone: 'error' }
-  if (v.kind === 'soon') return { label: 'expiring', tone: 'warning' }
+  if (v.kind === 'soon') return { label: 'expiring', tone: 'error' }
   if (v.kind === 'compacted') return { label: 'compacted', tone: 'muted' }
   if (v.kind === 'uncached') return { label: 'not cached', tone: 'muted' }
   if (v.kind === 'none') return { label: 'no requests', tone: 'muted' }
   if (v.miss) return { label: 'missed', tone: 'error' }
+  if ((v.left ?? 1) <= COOLING) return { label: 'cooling', tone: 'warning' }
   return { label: 'warm', tone: 'success' }
+}
+
+export type Heat = { tone: 'muted' | 'warning' | 'error'; isAlert: boolean }
+
+/**
+ * How the time left should look, going from calm to red as it runs out:
+ * plain over half its life, amber under half, amber with a warning sign under
+ * a quarter, red with the sign in the last minutes and once cold.
+ */
+export function heatOf(v: View): Heat {
+  if (v.kind === 'cold' || v.kind === 'soon') return { tone: 'error', isAlert: true }
+  if (v.kind !== 'warm') return { tone: 'muted', isAlert: false }
+  const left = v.left ?? 1
+  if (left <= COOLING) return { tone: 'warning', isAlert: true }
+  if (left <= 0.5) return { tone: 'warning', isAlert: false }
+  return { tone: 'muted', isAlert: false }
+}
+
+/** "4m", "1h 12m": how long, roughly, for prose. */
+export function fmtAgo(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000))
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
 }
