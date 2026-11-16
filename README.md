@@ -228,8 +228,8 @@ The breakdown is the one `/context` draws, estimated locally after each turn (no
 - **Enable** or **Disable** any of them.
 - **Update** when the marketplace has a newer version; **Check for updates** pulls your marketplaces first.
 - **Install** from the **Available** section.
-- Themes are one at a time: turning one on turns the others off.
-- After a change, **Reload plugins** loads it in the current session.
+- Themes are one at a time: turning one on turns the others off, and the look switches right away when the session has that theme loaded.
+- After a change, **Reload plugins** loads it in the current session. Sessions that can't reload plugins (the desktop app's) load it in the next session, and the pane says so.
 
 It reads Claude Code's own files and writes none: every change goes through the `claude plugin` command. If it can't find the command, the command is copied to your clipboard to run yourself.
 

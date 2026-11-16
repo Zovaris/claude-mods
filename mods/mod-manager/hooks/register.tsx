@@ -23,6 +23,7 @@ const note = atom({ plugin: 'mod-manager', key: 'note' } as const, '', { shape: 
 const dirty = atom({ plugin: 'mod-manager', key: 'dirty' } as const, false, { shape: 'dirty-1' })
 
 let configDir = ''
+let canReload = true
 let claudeBin: string | null = null
 
 async function readJson<T>($: EngineInterface, path: string): Promise<T | null> {
@@ -117,26 +118,28 @@ async function refresh($: EngineInterface) {
 }
 
 /** Runs `claude plugin …`, then reads the files again. */
-async function run($: EngineInterface, label: string, args: string[]) {
-  if (await read($, busy)) return
+async function run($: EngineInterface, label: string, args: string[]): Promise<boolean> {
+  if (await read($, busy)) return false
   await update($, busy, () => label)
   try {
     claudeBin ??= await findClaude($)
     if (!claudeBin) {
       await $.ui.copy({ text: `claude ${args.join(' ')}` }).catch(() => undefined)
       await update($, note, () => `Couldn't find the claude command. "claude ${args.join(' ')}" is on your clipboard: run it in a terminal.`)
-      return
+      return false
     }
     const r = await $.process.run([claudeBin, ...args], { timeoutMs: 180_000 })
     const out = (r.stdout + r.stderr).trim().split('\n').filter(Boolean).pop() ?? ''
     if (r.exitCode === 0) {
       await update($, note, () => out.replace(/^✔\s*/, ''))
       await update($, dirty, () => true)
-    } else {
-      await update($, note, () => `Failed: ${out || `exit ${r.exitCode}`}`)
+      return true
     }
+    await update($, note, () => `Failed: ${out || `exit ${r.exitCode}`}`)
+    return false
   } catch (err) {
     await update($, note, () => `Failed: ${String(err)}`)
+    return false
   } finally {
     await update($, busy, () => null)
     await refresh($)
@@ -146,6 +149,12 @@ async function run($: EngineInterface, label: string, args: string[]) {
 /**
  * Turns a mod or theme on or off, or installs it. Only one look draws at a time
  * (the last one set wins), so turning a theme on turns the other themes off.
+ *
+ * Enabling a plugin only takes effect when plugins load, and a desktop
+ * session can't reload them. So a theme is also switched live: turned on with
+ * its own `/<name> on` when this session has it loaded, and the look cleared
+ * when a theme is turned off. What can't switch live says it waits for a new
+ * session.
  */
 async function choose($: EngineInterface, x: Entry, verb: 'enable' | 'disable' | 'install') {
   if (verb !== 'disable' && x.kind === 'theme') {
@@ -153,7 +162,28 @@ async function choose($: EngineInterface, x: Entry, verb: 'enable' | 'disable' |
     for (const o of others) await run($, `Turning ${o.name} off…`, ['plugin', 'disable', o.id])
   }
   const label = verb === 'enable' ? 'Enabling' : verb === 'disable' ? 'Disabling' : 'Installing'
-  await run($, `${label} ${x.name}…`, ['plugin', verb, x.id])
+  const ok = await run($, `${label} ${x.name}…`, ['plugin', verb, x.id])
+  if (!ok || x.kind !== 'theme') return
+  if (verb === 'disable') {
+    await $.theme.clear().catch(() => undefined)
+    await update($, note, () => `${x.name} is off.`)
+    return
+  }
+  const live = await $.command
+    .run({ command: x.name, args: 'on' })
+    .then(r => !!r && !/not available|unknown command/i.test(r.text ?? ''))
+    .catch(() => false)
+  await update($, note, () => (live ? `${x.name} is on.` : `${x.name} is on from your next session.`))
+}
+
+/** Loads plugin changes now, where the session can; else says when they load. */
+async function reload($: EngineInterface) {
+  await update($, dirty, () => false)
+  const r = await $.command.run({ command: 'reload-plugins' }).catch(() => undefined)
+  if (!r || /isn't available|not available/i.test(r.text ?? '')) {
+    canReload = false
+    await update($, note, () => 'This session can’t reload plugins: changes load in your next session.')
+  }
 }
 
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: 'Mods' })
@@ -290,16 +320,11 @@ export const register: Register = on => {
         {(working || message || needsReload) && (
           <Box marginTop={2} justifyContent="space-between" alignItems="center">
             <Text dimColor>{working ?? message}</Text>
-            {needsReload && !working && (
+            {needsReload && canReload && !working && (
               <Button
                 key="reload"
                 label="Reload plugins"
-                onPress={() =>
-                  void (async () => {
-                    await update($, dirty, () => false)
-                    await $.command.run({ command: 'reload-plugins' }).catch(() => $.ui.toast('Run /reload-plugins to load the change.'))
-                  })()
-                }
+                onPress={() => void reload($)}
               />
             )}
           </Box>

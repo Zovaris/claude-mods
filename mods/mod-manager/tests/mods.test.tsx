@@ -96,11 +96,34 @@ test('lists mods, themes and what is available, and updates through the claude c
 test('turning a theme on turns the other themes off first', async ($, on) => {
   const ran: string[][] = []
   engine(on, ran)
+  const themed: string[] = []
+  on('command.run', { command: 'nebula' }, (_, e) => {
+    themed.push(e.args)
+    return { text: 'Nebula is on.' }
+  })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'mods', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'switch:nebula@claude-mods' })
   const cmds = ran.filter(a => a[1] === 'plugin').map(a => a.slice(1).join(' '))
   expect(cmds).toEqual(['plugin disable dunes@claude-mods', 'plugin enable nebula@claude-mods'])
+  // Switched live too, through the theme's own command.
+  expect(themed).toEqual(['on'])
+  expect(JSON.stringify(await ui.drawn())).toContain('nebula is on.')
+  await ui.unmount()
+})
+
+test('where the session cannot reload plugins, the pane says when changes load', async ($, on) => {
+  const ran: string[][] = []
+  engine(on, ran)
+  on('command.run', { command: 'reload-plugins' }, () => ({ text: "/reload-plugins isn't available over a remote connection in this session." }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mods', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'update:usage-bar@claude-mods' })
+  await ui.press({ key: 'reload' })
+  expect(JSON.stringify(await ui.drawn())).toContain('changes load in your next session')
+  await ui.press({ key: 'update:usage-bar@claude-mods' })
+  expect(await ui.find({ key: 'reload' })).toBeUndefined()
   await ui.unmount()
 })
