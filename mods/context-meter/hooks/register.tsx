@@ -170,6 +170,19 @@ export const register: Register = on => {
     return r
   })
 
+  // The compaction's own row. Seen even when another plugin answers
+  // session.compact before ours (as an organization's security plugin can),
+  // so /compact and Claude Code's own auto-compact always update the meter.
+  // Measured a beat later, once the old messages have left the window.
+  on('session.append', { door: 'compaction' }, async ($, e, next) => {
+    const r = await next(e)
+    if (!e.agentId) {
+      await update($, snooze, () => 0)
+      $.clock.after(400, () => void refresh($).catch(() => undefined))
+    }
+    return r
+  })
+
   on('command.run', { command: 'context-meter' }, async ($, e) => {
     const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/)
     if (verb === 'auto') {

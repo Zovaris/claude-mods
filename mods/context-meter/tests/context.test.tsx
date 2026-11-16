@@ -30,7 +30,7 @@ test('the compaction point and the states', () => {
   expect(contextState(snap(800_000)).label).toBe('compacts soon')
 })
 
-const engine = (on: On) => {
+const engine = (on: On, used = { total: 400_000 }) => {
   mock.store(on)
   const clock = mock.clock(on, { now: 1_800_000_000_000 })
   on('command.register', () => ({ value: { command: 'context-meter' } }))
@@ -45,11 +45,11 @@ const engine = (on: On) => {
           categories: [
             { name: 'System prompt', tokens: 20_000, color: 'x', isDeferred: false, kind: 'used' },
             { name: 'MCP tools', tokens: 30_000, color: 'x', isDeferred: false, kind: 'used' },
-            { name: 'Messages', tokens: 350_000, color: 'x', isDeferred: false, kind: 'used' },
+            { name: "Messages", get tokens() { return used.total - 50_000 }, color: 'x', isDeferred: false, kind: 'used' },
             { name: 'Free space', tokens: 430_000, color: 'x', isDeferred: false, kind: 'free' },
             { name: 'Autocompact buffer', tokens: 170_000, color: 'x', isDeferred: false, kind: 'buffer' },
           ],
-          totalTokens: 400_000,
+          get totalTokens() { return used.total },
           maxTokens: 1_000_000,
           rawMaxTokens: 1_000_000,
           autocompactSource: 'model-default',
@@ -139,4 +139,28 @@ test('past the threshold, auto mode compacts on its own', async ($, on) => {
   await $.turn.complete({ turnId: 't1', answer: 'done', durationMs: 10, isAborted: false, reason: 'end_turn' } as never)
   await clock.advance(2000)
   expect(triggers.length).toBe(1)
+})
+
+test('a compaction updates the meter even when session.compact never reaches the mod', async ($, on) => {
+  const used = { total: 734_000 }
+  const clock = engine(on, used)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run(cmd(''))
+  const props = { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+  let band = await $.ui.mount({ plugin: 'context-meter', component: 'AbovePrompt', surface: 'desktop', props })
+  expect(JSON.stringify(await band.drawn())).toContain('734k of 1M')
+  await band.unmount()
+
+  // /compact ran, but another plugin answered session.compact first: only the row arrives.
+  used.total = 99_800
+  await $.session.append({
+    message: { type: 'system', content: [{ type: 'text', text: 'Conversation compacted' }] },
+    door: 'compaction',
+    origin: { kind: 'engine' },
+    uuid: 'c1',
+  } as never)
+  await clock.advance(1000)
+  band = await $.ui.mount({ plugin: 'context-meter', component: 'AbovePrompt', surface: 'desktop', props })
+  expect(JSON.stringify(await band.drawn())).toContain('99.8k of 1M')
+  await band.unmount()
 })
