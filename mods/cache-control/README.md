@@ -42,7 +42,7 @@ The time left changes color as it runs out: plain over half its lifetime, amber 
 - **Subscription or API.** On a Claude subscription a cold send costs no money, it uses more of your plan's limits, so the row, the question and the warning say how many times a warm send it weighs, with the API price beside it as a reference. **Show API prices** in the pane, or `/cache prices off`, leaves the plan weight alone. On the API, or once you're past your plan's limits, they say what it costs.
 - **Extend the cache.** The cache lasts its own lifetime after your last message (1 hour on a subscription) at no cost. **+1 hour**, **+3 hours** or **+8 hours** in the pane (or `/cache warm 2h`) keeps it past that, with a ping just before each expiry while you're idle. **Off**, or `/cache stop`, ends the extension: no more pings, and the cache runs out on its own. It's for this session only, and when you write again everything carries on.
 - **An idle cache costs nothing.** The countdown is the cache running out on its own: nothing is sent and nothing is charged while keep-warm is **Off**, and your next message starts it over. Only messages and keep-warm pings count.
-- **Cache lifetime.** Follows Claude Code's own rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account) and corrects itself from request timing.
+- **Cache lifetime.** **Auto** by default, set by hand to **1 hour** or **5 minutes** from the pane when needed. Auto follows Claude Code's own rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account) and corrects itself from request timing.
 
 ## Options
 

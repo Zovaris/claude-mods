@@ -23,6 +23,7 @@ declare module 'claude-code' {
       lastPing: Shaped<Ping | null>
       guard: Shaped<boolean>
       apiPrices: Shaped<boolean>
+      ttlChoice: Shaped<'auto' | '5m' | '1h'>
     }
   }
 }

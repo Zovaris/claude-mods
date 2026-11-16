@@ -62,6 +62,8 @@ const guard = atom({ plugin: 'cache-control', key: 'guard' } as const, true, { s
 /** On a subscription, also show what a cold send would cost at API prices. */
 const apiPrices = atom({ plugin: 'cache-control', key: 'apiPrices' } as const, true, { shape: 'api-prices-1' })
 let showApi = true
+/** The cache lifetime picked in the pane: auto (detected), or 1h / 5m by hand. */
+const ttlChoice = atom({ plugin: 'cache-control', key: 'ttlChoice' } as const, 'auto', { shape: 'ttl-choice-1' })
 
 // Module values: rebuilt by session.start after a reload.
 let env: CacheEnv = {}
@@ -100,11 +102,13 @@ type Snapshot = { ttl: Ttl; ttlSource: string; view: View; list: Sample[]; warm:
 async function snapshot($: EngineInterface): Promise<Snapshot> {
   const now = await $.clock.now()
   const seen = await read($, observedTtl)
-  const ttl = seen ?? base.ttl
+  const chosen = await read($, ttlChoice)
+  const ttl = chosen !== 'auto' ? chosen : (seen ?? base.ttl)
   const list = await read($, samples)
   return {
     ttl,
-    ttlSource: seen ? `observed from traffic (${base.source} said ${base.ttl})` : base.source,
+    ttlSource:
+      chosen !== 'auto' ? 'set by hand' : seen ? `detected: observed from traffic (${base.source} said ${base.ttl})` : `detected: ${base.source}`,
     view: viewOf(list, ttl, now, await read($, compactedAt)),
     list,
     warm: await read($, warmUntil),
@@ -290,6 +294,8 @@ export const register: Register = (on, options) => {
     await refreshAccount($, options.ttl)
     const stored = await $.store.get('guard')
     if (typeof stored === 'boolean') await update($, guard, () => stored)
+    const choice = await $.store.get('ttlChoice')
+    if (choice === 'auto' || choice === '5m' || choice === '1h') await update($, ttlChoice, () => choice)
     const prices = await $.store.get('apiPrices')
     if (typeof prices === 'boolean') await update($, apiPrices, () => prices)
     showApi = await read($, apiPrices)
@@ -525,6 +531,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = table
     const s = await snapshot($)
     const { view, ttl, warm, now, list } = s
+    const chosen = await read($, ttlChoice)
     const isGuarded = await read($, guard)
     const ping: Ping | null = await read($, lastPing)
     const cols = e.props.bodyColumns ?? 50
@@ -690,6 +697,36 @@ export const register: Register = (on, options) => {
         )}
 
         {/* Keep warm */}
+        {/* Cache lifetime: detected, or set by hand */}
+        {heading('Cache lifetime', s.ttlSource)}
+        <Text dimColor>
+          Auto follows Claude Code: 1 hour on a Claude subscription within its limits, 5 minutes on an API key, a cloud
+          provider or usage credits. Set it by hand if the count looks wrong, such as behind a proxy.
+        </Text>
+        <Box gap={1} marginTop={1}>
+          {(
+            [
+              ['ttl-auto', 'Auto', 'auto'],
+              ['ttl-1h', '1 hour', '1h'],
+              ['ttl-5m', '5 minutes', '5m'],
+            ] as const
+          ).map(([key, label, value]) => (
+            <Button
+              key={key}
+              variant={chosen === value ? 'primary' : 'secondary'}
+              label={label}
+              onPress={() =>
+                void (async () => {
+                  await update($, ttlChoice, () => value)
+                  await $.store.set('ttlChoice', value)
+                  lastKey = ''
+                  $.ui.invalidate('ui.render')
+                })()
+              }
+            />
+          ))}
+        </Box>
+
         {heading('Extend the cache', warm > now ? `ends in ${fmtClock(warm - now)}` : 'off')}
         <Text dimColor>
           {warm > now

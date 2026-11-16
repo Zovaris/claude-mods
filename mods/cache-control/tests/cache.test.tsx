@@ -246,3 +246,25 @@ test('what the session measured survives a reload of the plugin', async ($, on) 
   expect(await band.find({ type: 'Text', text: /keep going/ })).toBeDefined()
   await band.unmount()
 })
+
+test('the cache lifetime is detected, or set by hand from the pane', async ($, on) => {
+  // A request 10 minutes ago: alive with a 1h cache, cold with a 5m one.
+  engine(on, [big(T0 + 2 * 3_600_000 - 10 * 60_000)])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const pane = await $.ui.mount({
+    plugin: 'cache-control',
+    component: 'Pane',
+    requestId: 'cache-control',
+    surface: 'desktop',
+    props: { title: 'Cache', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 120 }, view: {} },
+  })
+  expect(JSON.stringify(await pane.find({ key: 'ttl-auto' }))).toContain('primary')
+  expect(JSON.stringify(await pane.drawn())).toContain('detected')
+  await pane.press({ key: 'ttl-1h' })
+  const drawn = JSON.stringify(await pane.drawn())
+  expect(drawn).toContain('set by hand')
+  expect(drawn).toContain('Expires in')
+  await pane.press({ key: 'ttl-auto' })
+  expect(JSON.stringify(await pane.find({ key: 'ttl-auto' }))).toContain('primary')
+  await pane.unmount()
+})
