@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { cacheState, heatOf, missReason, parseDuration, sendCost, viewOf } from '../hooks/cache'
-import { langOf } from '../hooks/i18n'
+import { langOf, pickLang, tallyOf } from '../hooks/i18n'
 import type { Sample } from '../types'
 
 const T0 = 1_800_000_000_000
@@ -54,12 +54,16 @@ test('the time left goes from calm to amber to red', () => {
   expect(at(70).coldForMs).toBe(10 * 60_000)
 })
 
-test('the alert language: the setting, then the locale, else English', () => {
-  expect(langOf('spanish', 'en_US.UTF-8')).toBe('es')
-  expect(langOf(undefined, undefined, 'es_MX.UTF-8')).toBe('es')
-  expect(langOf(undefined, 'C', 'pt_BR.UTF-8')).toBe('pt')
+test('the alert language: the setting, else what you write, else English', () => {
+  expect(langOf('spanish')).toBe('es')
   expect(langOf('Français')).toBe('fr')
-  expect(langOf('klingon', undefined)).toBe('en')
+  expect(langOf('klingon')).toBeNull()
+  const es = tallyOf('Igual ten en cuenta que mucha gente usa la suscripción, y por defecto inglés, pero se puede ajustar')
+  expect(pickLang(null, es)).toBe('es')
+  expect(pickLang('fr', es)).toBe('fr')
+  expect(pickLang(null, tallyOf('can you show me how it looks'))).toBe('en')
+  expect(pickLang(null, tallyOf('ok'))).toBe('en')
+  expect(pickLang(null, tallyOf('Você pode me mostrar isso? Não sei se está certo'))).toBe('pt')
 })
 
 test('durations', () => {
@@ -134,27 +138,40 @@ test('the band and the pane draw on the terminal and desktop', async ($, on) => 
   }
 })
 
-test('the cold-send question speaks the person\'s language, with tokens, cost and how long ago', async ($, on) => {
+const asking = (on: On, rateLimits: unknown[]) => {
   mock.store(on)
   mock.clock(on, { now: T0 + 70 * 60_000 })
   on('command.register', () => ({ value: { command: 'cache' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.usage', () => ({ value: { startedAt: T0, context: { window: 1_000_000 }, rateLimits: [] } }))
+  on('session.usage', () => ({ value: { startedAt: T0, context: { window: 1_000_000 }, rateLimits } }) as never)
   on('state.get', ($, e, next) =>
     e.key === 'samples' ? { value: { value: { shape: 'samples-1', value: [big(T0)] }, version: 1 } } : next(e),
   )
-  on('env.get', (_, e) => ({ value: e.name === 'LANG' ? 'es_MX.UTF-8' : undefined }) as never)
   const asked: string[] = []
   on('tool.call', (_, e) => {
     asked.push(JSON.stringify(e))
     return { deny: 'dismissed' }
   })
   on('prompt.submit', (_, e) => ({ text: e.text }))
+  return asked
+}
+
+test('on a subscription the cold-send question speaks of plan limits, in the language you write', async ($, on) => {
+  const asked = asking(on, [{ kind: 'five_hour', percentUsed: 40, resetsAt: T0 + 3_600_000 }])
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const held = await $.prompt.submit({ text: 'hola', origin: { kind: 'composer' }, wait: false })
+  const held = await $.prompt.submit({ text: 'puedes revisar si esto está bien y también el README', origin: { kind: 'composer' }, wait: false })
   expect(held.drop).toContain('No se envió')
   expect(asked[0]).toMatch(/venció hace \d/)
-  expect(asked[0]).toContain('Caché fría')
   expect(asked[0]).toContain('200k tokens')
-  expect(asked[0]).toContain('Enviar igual')
+  expect(asked[0]).toContain('límites de tu plan')
+  expect(asked[0]).not.toContain('$')
+  expect(asked[0]).toContain('Caché fría')
+})
+
+test('on the API it speaks of dollars, and English by default', async ($, on) => {
+  const asked = asking(on, [])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.prompt.submit({ text: 'ok', origin: { kind: 'composer' }, wait: false })
+  expect(asked[0]).toContain('API prices')
+  expect(asked[0]).toContain('Send anyway (~$')
 })

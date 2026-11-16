@@ -39,8 +39,8 @@ import {
   viewOf,
 } from './cache'
 import type { Account, CacheEnv, Ttl, View } from './cache'
-import { langOf, STRINGS } from './i18n'
-import type { Lang } from './i18n'
+import { emptyTally, langOf, pickLang, STRINGS, tallyOf } from './i18n'
+import type { Lang, Tally, Weight } from './i18n'
 import { chip, slimBar, THEME_TONE } from './slim'
 
 const PANE = 'cache-control'
@@ -66,7 +66,22 @@ let ticker: { cancel: () => void } | undefined
 let lastKey = ''
 let toastedFor = 0
 let isBusy = false
-let lang: Lang = 'en'
+let settingLang: Lang | null = null
+let tally: Tally = emptyTally()
+const lang = (): Lang => pickLang(settingLang, tally)
+
+/** What a cold send weighs: dollars on the API, times a warm send on a subscription. */
+function weightOf(view: View): Weight {
+  const c = view.cost
+  if (account === 'subscription' && c && c.warm > 0) return { kind: 'plan', times: String(Math.max(2, Math.round(c.cold / c.warm))) }
+  return { kind: 'api', cold: fmtUsd(c?.cold), warm: fmtUsd(c?.warm) }
+}
+
+/** The weight in a few words, for the row above the prompt. */
+const weighs = (view: View) => {
+  const w = weightOf(view)
+  return w.kind === 'api' ? `~${w.cold}` : `~${w.times}× a warm send`
+}
 let isPinging = false
 let nextPingAt = 0
 
@@ -176,7 +191,7 @@ async function tick($: EngineInterface, wantToast: boolean) {
   const last = view.last
   if (wantToast && last && view.kind === 'soon' && view.tokens >= TOAST_MIN && warm <= now && toastedFor !== last.startedAt) {
     toastedFor = last.startedAt
-    $.ui.toast(STRINGS[lang].expiring({ left: fmtClock(view.leftMs), tokens: fmtTokens(view.tokens), cold: fmtUsd(view.cost?.cold) }))
+    $.ui.toast(STRINGS[lang()].expiring({ left: fmtClock(view.leftMs), tokens: fmtTokens(view.tokens), weight: weightOf(view) }))
   }
 
   if (warm > now && !isBusy && !isPinging && now >= nextPingAt && (view.kind === 'warm' || view.kind === 'soon')) {
@@ -221,11 +236,9 @@ export const register: Register = (on, options) => {
     }
     setting = await readSettingTtl($)
     const language = await $.settings.read({ key: 'language' }).catch(() => undefined)
-    lang = langOf(
-      typeof language === 'string' ? language : undefined,
-      await $.env.get('LC_ALL').catch(() => undefined),
-      await $.env.get('LANG').catch(() => undefined),
-    )
+    settingLang = langOf(typeof language === 'string' ? language : undefined)
+    const kept = await $.store.get('langTally')
+    if (kept && typeof kept === 'object') tally = { ...emptyTally(), ...(kept as Partial<Tally>) }
     await refreshAccount($, options.ttl)
     const stored = await $.store.get('guard')
     if (typeof stored === 'boolean') await update($, guard, () => stored)
@@ -297,15 +310,22 @@ export const register: Register = (on, options) => {
   // The cold-send guard, and the busy flag that keeps pings off a running turn.
   on('prompt.submit', async ($, e, next) => {
     const isPerson = e.origin.kind === 'composer' && !e.command && !e.isMeta
+    if (isPerson && e.text) {
+      // Learn the language you write in, so the alerts can speak it.
+      tally = tallyOf(e.text, tally)
+      const top = Math.max(...Object.values(tally))
+      if (top > 200) for (const k of Object.keys(tally) as Lang[]) tally[k] = Math.round(tally[k] / 2)
+      void $.store.set('langTally', tally).catch(() => undefined)
+    }
     if (isPerson && (await read($, guard))) {
       const { view } = await snapshot($)
       if (view.kind === 'cold' && view.tokens >= guardMin && view.cost) {
-        const t = STRINGS[lang]
-        const cold = fmtUsd(view.cost.cold)
-        const send = t.send(cold)
+        const t = STRINGS[lang()]
+        const weight = weightOf(view)
+        const send = t.send(weight)
         try {
           const answer = await $.ui.ask(
-            t.question({ tokens: fmtTokens(view.tokens), cold, warm: fmtUsd(view.cost.warm), ago: fmtAgo(view.coldForMs ?? 0) }),
+            t.question({ tokens: fmtTokens(view.tokens), weight, ago: fmtAgo(view.coldForMs ?? 0) }),
             { options: [send, t.hold], header: t.header },
           )
           if (answer !== send) return { drop: t.held }
@@ -367,12 +387,12 @@ export const register: Register = (on, options) => {
         ? view.miss
           ? `missed: ${view.miss}`
           : heat.isAlert
-            ? `cooling · a message in the next ${fmtClock(view.leftMs)} keeps it warm · cold it costs ~${fmtUsd(view.cost?.cold)}`
-            : `keep going · a cold send would cost ~${fmtUsd(view.cost?.cold)}`
+            ? `cooling · a message in the next ${fmtClock(view.leftMs)} keeps it warm · cold it weighs ${weighs(view)}`
+            : `keep going · a cold send would weigh ${weighs(view)}`
         : view.kind === 'soon'
-          ? `send something to renew it for free · once cold it costs ~${fmtUsd(view.cost?.cold)}`
+          ? `send something to renew it for free · once cold it weighs ${weighs(view)}`
           : view.kind === 'cold'
-            ? `the next message rewrites ${fmtTokens(view.tokens)} (~${fmtUsd(view.cost?.cold)} vs ~${fmtUsd(view.cost?.warm)} warm) · /clear starts fresh for less`
+            ? `the next message resends ${fmtTokens(view.tokens)} uncached (${account === 'subscription' ? weighs(view) : `~${fmtUsd(view.cost?.cold)} vs ~${fmtUsd(view.cost?.warm)} warm`}) · /clear starts fresh for less`
             : view.kind === 'compacted'
               ? 'the next message starts from the summary'
               : 'prompt under the model minimum, or caching off'
@@ -549,8 +569,10 @@ export const register: Register = (on, options) => {
           <Box marginTop={2} gap={3}>
             {tile('ctx', fmtTokens(view.tokens), 'context')}
             {tile('hit', `${Math.round(sessionHit * 100)}%`, 'from cache', sessionHit >= 0.8 ? 'success' : sessionHit >= 0.4 ? 'warning' : 'error')}
-            {tile('cold', fmtUsd(view.cost?.cold), 'if sent cold', view.kind === 'cold' ? 'error' : undefined)}
-            {tile('saved', fmtUsd(Math.max(0, without - spent)), 'saved', 'success')}
+            {account === 'subscription'
+              ? tile('cold', `${(weightOf(view) as { times?: string }).times ?? '—'}×`, 'a warm send, if sent cold', view.kind === 'cold' ? 'error' : undefined)
+              : tile('cold', fmtUsd(view.cost?.cold), 'if sent cold', view.kind === 'cold' ? 'error' : undefined)}
+            {tile('saved', fmtUsd(Math.max(0, without - spent)), account === 'subscription' ? 'saved (API equivalent)' : 'saved', 'success')}
           </Box>
         )}
 
