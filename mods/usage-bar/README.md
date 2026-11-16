@@ -42,4 +42,4 @@ Terminal and desktop app. Needs a Claude subscription: an API key reports no win
 
 ## Notes
 
-Windows come from the latest API reply and refresh every minute. "Today" starts at the first reading on your local day.
+Windows come from the reply to this session's latest request: the row updates the moment a window moves a point, and checks every minute. What other sessions or devices use shows up with this session's next reply, so between replies it can read a few points lower than the app's own usage menu. "Today" starts at the first reading on your local day.

@@ -79,6 +79,14 @@ export const register: Register = on => {
     return r
   })
 
+  // Pushed by the engine the moment a window moves a whole point, without
+  // waiting for the turn to end or the next minute.
+  on('session.measure', async ($, e, next) => {
+    const r = await next(e)
+    if (e.changed.includes('rateLimits')) void refresh($).catch(() => undefined)
+    return r
+  })
+
   on('command.run', { command: 'limits' }, async $ => {
     await refresh($)
     await openPane($)
