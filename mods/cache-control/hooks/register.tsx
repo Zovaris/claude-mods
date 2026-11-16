@@ -253,7 +253,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'cache',
       description: 'Prompt cache: pane, keep-warm and cold-send confirmation',
-      argumentHint: '[warm [2h] | warm off | guard on|off | prices on|off | status]',
+      argumentHint: '[warm [2h] | stop | guard on|off | prices on|off | status]',
     })
 
     lastKey = ''
@@ -356,6 +356,10 @@ export const register: Register = (on, options) => {
       await $.ui.open({ id: PANE, title: 'Cache' })
       return { text: 'Cache pane opened.' }
     }
+    if (verb === 'stop' || (verb === 'warm' && arg === 'off')) {
+      await update($, warmUntil, () => 0)
+      return { text: 'Keep-warm stopped for this session. Everything else stays as it was; just write to carry on.' }
+    }
     if (verb === 'warm') {
       if (arg === 'off') {
         await update($, warmUntil, () => 0)
@@ -382,14 +386,31 @@ export const register: Register = (on, options) => {
       return { text: `API prices: ${arg}.` }
     }
     if (verb === 'status') return { text: statusText(await snapshot($), await read($, guard), guardMin) }
-    return { text: 'Usage: /cache · /cache warm [2h] · /cache warm off · /cache guard on|off · /cache prices on|off · /cache status' }
+    return { text: 'Usage: /cache · /cache warm [2h] · /cache stop · /cache guard on|off · /cache prices on|off · /cache status' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (!showBand || e.props.hasSurvey) return next(e)
     const { view, warm, now, ttl } = await snapshot($)
-    if (view.kind === 'none' || !view.last) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
+    const details = <Button key="details" plain dimColor label="Details" onPress={() => void $.ui.open({ id: PANE, title: 'Cache' })} />
+    if (view.kind === 'none' || !view.last) {
+      // Nothing measured yet in this session (a new one, or just resumed or
+      // compacted): say so instead of vanishing.
+      return (
+        <Box justifyContent="space-between" alignItems="center">
+          <Text dimColor>Cache  waiting for the next reply to measure it</Text>
+          {details}
+        </Box>
+      )
+    }
+    // Keep-warm from the row: on for this session, or stopped. Nothing global.
+    const isWarming = warm > now
+    const warmButton = isWarming ? (
+      <Button key="warm-stop" plain label="Stop keep-warm" onPress={() => void update($, warmUntil, () => 0)} />
+    ) : view.kind === 'warm' || view.kind === 'soon' ? (
+      <Button key="warm-start" plain dimColor label="Keep warm" onPress={() => void arm($, DEFAULT_WARM)} />
+    ) : null
 
     const last = [...(await read($, samples))].reverse().find(x => !x.isPing) ?? view.last
     const hit = hitRatio(last)
@@ -450,7 +471,10 @@ export const register: Register = (on, options) => {
               <Text color="suggestion">{fmtTokens(last.fresh)}</Text>
             </Text>
           </Box>
-          <Button key="details" plain dimColor label="Details" onPress={() => void $.ui.open({ id: PANE, title: 'Cache' })} />
+          <Box gap={2} alignItems="center">
+            {warmButton}
+            {details}
+          </Box>
         </Box>
         <Text
           dimColor={view.kind === 'warm' && !view.miss && !heat.isAlert}

@@ -107,7 +107,8 @@ test('/cache warm arms keep-warm and /cache status says so', async ($, on) => {
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   expect((await $.command.run(run('warm 90m'))).text).toContain('1:30:00')
   expect((await $.command.run(run('status'))).text).toContain('Keeping warm')
-  expect((await $.command.run(run('warm off'))).text).toContain('off')
+  expect((await $.command.run(run('stop'))).text).toContain('stopped for this session')
+  expect((await $.command.run(run('status'))).text).not.toContain('Keeping warm')
 })
 
 test('the band and the pane draw on the terminal and desktop', async ($, on) => {
@@ -181,4 +182,29 @@ test('on the API it speaks of dollars, and English by default', async ($, on) =>
   await $.prompt.submit({ text: 'ok', origin: { kind: 'composer' }, wait: false })
   expect(asked[0]).toContain('API prices')
   expect(asked[0]).toContain('Send anyway (~$')
+})
+
+const BAND = { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+
+test('keep-warm starts and stops from the row, for this session only', async ($, on) => {
+  engine(on, [big(T0 + 2 * 3_600_000 - 2 * 60_000)])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
+  await band.press({ key: 'warm-start' })
+  expect(JSON.stringify(await band.drawn())).toContain('kept warm')
+  await band.press({ key: 'warm-stop' })
+  expect(JSON.stringify(await band.drawn())).not.toContain('kept warm')
+  expect(await band.find({ key: 'warm-start' })).toBeDefined()
+  // The guard, a setting kept across sessions, is untouched.
+  expect((await $.command.run(run('status'))).text).toContain('Confirm cold sends: yes')
+  await band.unmount()
+})
+
+test('with nothing measured yet, the row waits instead of vanishing', async ($, on) => {
+  engine(on, [])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
+  expect(JSON.stringify(await band.drawn())).toContain('waiting for the next reply')
+  expect(await band.find({ key: 'details' })).toBeDefined()
+  await band.unmount()
 })
