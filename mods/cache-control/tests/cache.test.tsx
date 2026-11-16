@@ -198,8 +198,10 @@ test('keep-warm starts and stops from the pane, for this session only', async ($
   })
   await pane.press({ key: 'warm-3h' })
   expect(JSON.stringify(await pane.drawn())).toContain('3:00:00 left')
+  expect(JSON.stringify(await pane.find({ key: 'warm-3h' }))).toContain('primary')
   await pane.press({ key: 'warm-off' })
-  expect(await pane.find({ key: 'warm-off' })).toBeUndefined()
+  expect(JSON.stringify(await pane.drawn())).not.toContain('3:00:00 left')
+  expect(JSON.stringify(await pane.find({ key: 'warm-off' }))).toContain('primary')
   // The row stays minimal: no buttons but Details.
   const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
   expect(await band.find({ key: 'warm-start' })).toBeUndefined()

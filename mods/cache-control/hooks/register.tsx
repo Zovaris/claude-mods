@@ -204,7 +204,11 @@ async function tick($: EngineInterface, wantToast: boolean) {
   if (warm > 0 && warm <= now) await update($, warmUntil, () => 0)
 }
 
+/** The length keep-warm was last started for, to mark it in the pane. */
+let armedFor = 0
+
 async function arm($: EngineInterface, ms: number) {
+  armedFor = ms
   const until = (await $.clock.now()) + Math.min(MAX_WARM, ms)
   await update($, warmUntil, () => until)
   lastKey = ''
@@ -655,10 +659,21 @@ export const register: Register = (on, options) => {
           {ping ? ` Last: ${ping.note}.` : ''}
         </Text>
         <Box gap={1} marginTop={1}>
-          <Button key="warm-1h" label="1 hour" onPress={() => void arm($, 3_600_000)} />
-          <Button key="warm-3h" label="3 hours" onPress={() => void arm($, 3 * 3_600_000)} />
-          <Button key="warm-8h" label="8 hours" onPress={() => void arm($, 8 * 3_600_000)} />
-          {warm > now && <Button key="warm-off" variant="secondary" label="Stop keep-warm" onPress={() => void update($, warmUntil, () => 0)} />}
+          {/* One choice, always in view: Off stops it, a length starts or restarts it. */}
+          <Button
+            key="warm-off"
+            variant={warm > now ? 'secondary' : 'primary'}
+            label="Off"
+            onPress={() => void update($, warmUntil, () => 0)}
+          />
+          {([['warm-1h', '1 hour', 1], ['warm-3h', '3 hours', 3], ['warm-8h', '8 hours', 8]] as const).map(([key, label, hours]) => (
+            <Button
+              key={key}
+              variant={warm > now && armedFor === hours * 3_600_000 ? 'primary' : 'secondary'}
+              label={label}
+              onPress={() => void arm($, hours * 3_600_000)}
+            />
+          ))}
         </Box>
 
         {/* Guard */}
