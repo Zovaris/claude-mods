@@ -404,13 +404,6 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    // Keep-warm from the row: on for this session, or stopped. Nothing global.
-    const isWarming = warm > now
-    const warmButton = isWarming ? (
-      <Button key="warm-stop" plain label="Stop keep-warm" onPress={() => void update($, warmUntil, () => 0)} />
-    ) : view.kind === 'warm' || view.kind === 'soon' ? (
-      <Button key="warm-start" plain dimColor label="Keep warm" onPress={() => void arm($, DEFAULT_WARM)} />
-    ) : null
 
     const last = [...(await read($, samples))].reverse().find(x => !x.isPing) ?? view.last
     const hit = hitRatio(last)
@@ -471,10 +464,7 @@ export const register: Register = (on, options) => {
               <Text color="suggestion">{fmtTokens(last.fresh)}</Text>
             </Text>
           </Box>
-          <Box gap={2} alignItems="center">
-            {warmButton}
-            {details}
-          </Box>
+          {details}
         </Box>
         <Text
           dimColor={view.kind === 'warm' && !view.miss && !heat.isAlert}
@@ -668,7 +658,7 @@ export const register: Register = (on, options) => {
           <Button key="warm-1h" label="1 hour" onPress={() => void arm($, 3_600_000)} />
           <Button key="warm-3h" label="3 hours" onPress={() => void arm($, 3 * 3_600_000)} />
           <Button key="warm-8h" label="8 hours" onPress={() => void arm($, 8 * 3_600_000)} />
-          {warm > now && <Button key="warm-off" variant="secondary" label="Stop" onPress={() => void update($, warmUntil, () => 0)} />}
+          {warm > now && <Button key="warm-off" variant="secondary" label="Stop keep-warm" onPress={() => void update($, warmUntil, () => 0)} />}
         </Box>
 
         {/* Guard */}

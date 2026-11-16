@@ -186,18 +186,28 @@ test('on the API it speaks of dollars, and English by default', async ($, on) =>
 
 const BAND = { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} }
 
-test('keep-warm starts and stops from the row, for this session only', async ($, on) => {
+test('keep-warm starts and stops from the pane, for this session only', async ($, on) => {
   engine(on, [big(T0 + 2 * 3_600_000 - 2 * 60_000)])
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const pane = await $.ui.mount({
+    plugin: 'cache-control',
+    component: 'Pane',
+    requestId: 'cache-control',
+    surface: 'desktop',
+    props: { title: 'Cache', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 120 }, view: {} },
+  })
+  await pane.press({ key: 'warm-3h' })
+  expect(JSON.stringify(await pane.drawn())).toContain('3:00:00 left')
+  await pane.press({ key: 'warm-off' })
+  expect(await pane.find({ key: 'warm-off' })).toBeUndefined()
+  // The row stays minimal: no buttons but Details.
   const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
-  await band.press({ key: 'warm-start' })
-  expect(JSON.stringify(await band.drawn())).toContain('kept warm')
-  await band.press({ key: 'warm-stop' })
-  expect(JSON.stringify(await band.drawn())).not.toContain('kept warm')
-  expect(await band.find({ key: 'warm-start' })).toBeDefined()
+  expect(await band.find({ key: 'warm-start' })).toBeUndefined()
+  expect(await band.find({ key: 'details' })).toBeDefined()
   // The guard, a setting kept across sessions, is untouched.
   expect((await $.command.run(run('status'))).text).toContain('Confirm cold sends: yes')
   await band.unmount()
+  await pane.unmount()
 })
 
 test('with nothing measured yet, the row waits instead of vanishing', async ($, on) => {
