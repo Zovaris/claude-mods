@@ -56,6 +56,9 @@ const compactedAt = atom({ plugin: 'cache-control', key: 'compactedAt' } as cons
 const warmUntil = atom({ plugin: 'cache-control', key: 'warmUntil' } as const, 0, { shape: 'warm-1' })
 const lastPing = atom({ plugin: 'cache-control', key: 'lastPing' } as const, null, { shape: 'ping-1' })
 const guard = atom({ plugin: 'cache-control', key: 'guard' } as const, true, { shape: 'guard-1' })
+/** On a subscription, also show what a cold send would cost at API prices. */
+const apiPrices = atom({ plugin: 'cache-control', key: 'apiPrices' } as const, true, { shape: 'api-prices-1' })
+let showApi = true
 
 // Module values: rebuilt by session.start after a reload.
 let env: CacheEnv = {}
@@ -73,14 +76,15 @@ const lang = (): Lang => pickLang(settingLang, tally)
 /** What a cold send weighs: dollars on the API, times a warm send on a subscription. */
 function weightOf(view: View): Weight {
   const c = view.cost
-  if (account === 'subscription' && c && c.warm > 0) return { kind: 'plan', times: String(Math.max(2, Math.round(c.cold / c.warm))) }
+  if (account === 'subscription' && c && c.warm > 0)
+    return { kind: 'plan', times: String(Math.max(2, Math.round(c.cold / c.warm))), ...(showApi ? { cold: fmtUsd(c.cold) } : {}) }
   return { kind: 'api', cold: fmtUsd(c?.cold), warm: fmtUsd(c?.warm) }
 }
 
 /** The weight in a few words, for the row above the prompt. */
 const weighs = (view: View) => {
   const w = weightOf(view)
-  return w.kind === 'api' ? `~${w.cold}` : `~${w.times}× a warm send`
+  return w.kind === 'api' ? `~${w.cold}` : `~${w.times}× a warm send${w.cold ? ` (~${w.cold} API)` : ''}`
 }
 let isPinging = false
 let nextPingAt = 0
@@ -242,11 +246,14 @@ export const register: Register = (on, options) => {
     await refreshAccount($, options.ttl)
     const stored = await $.store.get('guard')
     if (typeof stored === 'boolean') await update($, guard, () => stored)
+    const prices = await $.store.get('apiPrices')
+    if (typeof prices === 'boolean') await update($, apiPrices, () => prices)
+    showApi = await read($, apiPrices)
 
     await $.command.register({
       name: 'cache',
       description: 'Prompt cache: pane, keep-warm and cold-send confirmation',
-      argumentHint: '[warm [2h] | warm off | guard on|off | status]',
+      argumentHint: '[warm [2h] | warm off | guard on|off | prices on|off | status]',
     })
 
     lastKey = ''
@@ -367,8 +374,15 @@ export const register: Register = (on, options) => {
       await $.store.set('guard', arg === 'on')
       return { text: `Confirm cold sends: ${arg}.` }
     }
+    if (verb === 'prices' && (arg === 'on' || arg === 'off')) {
+      await update($, apiPrices, () => arg === 'on')
+      showApi = arg === 'on'
+      await $.store.set('apiPrices', showApi)
+      $.ui.invalidate('ui.render')
+      return { text: `API prices: ${arg}.` }
+    }
     if (verb === 'status') return { text: statusText(await snapshot($), await read($, guard), guardMin) }
-    return { text: 'Usage: /cache · /cache warm [2h] · /cache warm off · /cache guard on|off · /cache status' }
+    return { text: 'Usage: /cache · /cache warm [2h] · /cache warm off · /cache guard on|off · /cache prices on|off · /cache status' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -654,6 +668,36 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           {isGuarded ? `Asks before sending when the cache is cold and the context is ${fmtTokens(guardMin)}+ tokens.` : 'Off: cold sends go out without asking.'}
         </Text>
+
+        {/* API prices, on a subscription */}
+        {account === 'subscription' && (
+          <Box flexDirection="column">
+            <Box justifyContent="space-between" alignItems="center" marginTop={2} marginBottom={1}>
+              <Text weight="semibold">
+                <Text color={showApi ? 'success' : 'inactive'}>● </Text>
+                Show API prices
+              </Text>
+              <Button
+                key="api-prices"
+                variant={showApi ? 'secondary' : 'primary'}
+                label={showApi ? 'Turn off' : 'Turn on'}
+                onPress={() =>
+                  void (async () => {
+                    await update($, apiPrices, v => !v)
+                    showApi = await read($, apiPrices)
+                    await $.store.set('apiPrices', showApi)
+                    $.ui.invalidate('ui.render')
+                  })()
+                }
+              />
+            </Box>
+            <Text dimColor>
+              {showApi
+                ? 'Your plan pays no API prices; they show beside the plan weight, as the API equivalent.'
+                : 'Off: a cold send is shown only as how many warm sends it weighs on your plan.'}
+            </Text>
+          </Box>
+        )}
 
         {/* Turns */}
         {rows.length > 0 && (

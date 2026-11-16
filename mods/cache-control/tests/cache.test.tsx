@@ -164,8 +164,15 @@ test('on a subscription the cold-send question speaks of plan limits, in the lan
   expect(asked[0]).toMatch(/venció hace \d/)
   expect(asked[0]).toContain('200k tokens')
   expect(asked[0]).toContain('límites de tu plan')
-  expect(asked[0]).not.toContain('$')
+  expect(asked[0]).toContain('a precio de API)')
+  expect(asked[0]).toContain('Enviar igual (~$')
   expect(asked[0]).toContain('Caché fría')
+
+  // API prices turned off: the plan weight alone.
+  await $.command.run(run('prices off'))
+  await $.prompt.submit({ text: 'otra vez, por favor', origin: { kind: 'composer' }, wait: false })
+  expect(asked[1]).toContain('límites de tu plan')
+  expect(asked[1]).not.toContain('$')
 })
 
 test('on the API it speaks of dollars, and English by default', async ($, on) => {

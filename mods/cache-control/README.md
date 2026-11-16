@@ -39,7 +39,7 @@ The time left changes color as it runs out: plain over half its lifetime, amber 
 
 - **Confirm cold sends.** With the cache expired and a context of 50k tokens or more, it asks before your message goes out: how long ago it expired, how many tokens go out uncached, and what that costs against a warm cache. `/cache guard off` turns it off.
 - **In your language.** The question and the expiry warning speak the language you write your prompts in (English, Spanish, Portuguese or French), or Claude Code's `language` setting when you have one. English until it can tell.
-- **Subscription or API.** On a Claude subscription a cold send costs no money, it uses more of your plan's limits, so the row, the question and the warning say how many times a warm send it weighs. On the API, or once you're past your plan's limits, they say what it costs.
+- **Subscription or API.** On a Claude subscription a cold send costs no money, it uses more of your plan's limits, so the row, the question and the warning say how many times a warm send it weighs, with the API price beside it as a reference. **Show API prices** in the pane, or `/cache prices off`, leaves the plan weight alone. On the API, or once you're past your plan's limits, they say what it costs.
 - **Keep warm.** `/cache warm 2h` pings the cache shortly before it expires while you're idle (10 minutes before for a 1-hour cache, 1 minute for a 5-minute one). It stops by itself if the cache had already gone cold. `/cache warm off` stops it.
 - **Cache lifetime.** Follows Claude Code's own rules (`FORCE_PROMPT_CACHING_5M`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `promptCacheTtl`, `ENABLE_PROMPT_CACHING_1H`, then the account) and corrects itself from request timing.
 

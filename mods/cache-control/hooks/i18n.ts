@@ -65,7 +65,7 @@ export function pickLang(setting: Lang | null, tally: Tally): Lang {
  * isn't, so there it's how many times a warm send it uses of the plan's
  * limits (the price ratio, the best measure there is).
  */
-export type Weight = { kind: 'api'; cold: string; warm: string } | { kind: 'plan'; times: string }
+export type Weight = { kind: 'api'; cold: string; warm: string } | { kind: 'plan'; times: string; cold?: string }
 export type ColdAsk = { tokens: string; ago: string; weight: Weight }
 export type Expiring = { left: string; tokens: string; weight: Weight }
 
@@ -86,15 +86,15 @@ export const STRINGS: Record<Lang, Strings> = {
       `⚠ The prompt cache expired ${a.ago} ago. This message resends ${a.tokens} tokens without the cache: ` +
       (a.weight.kind === 'api'
         ? `about ${a.weight.cold} at API prices, instead of ${a.weight.warm} with a warm cache.`
-        : `about ${a.weight.times}× what a warm send uses of your plan's limits.`) +
+        : `about ${a.weight.times}× what a warm send uses of your plan's limits${a.weight.cold ? ` (~${a.weight.cold} at API prices)` : ''}.`) +
       ' Send it anyway?',
-    send: w => (w.kind === 'api' ? `Send anyway (~${w.cold})` : 'Send anyway'),
+    send: w => (w.cold ? `Send anyway (~${w.cold})` : 'Send anyway'),
     hold: "Don't send",
     held: 'Not sent: the cache had expired. Send it again to go ahead, or /clear to start fresh for less.',
     heldUnanswered: 'Not sent: the cache had expired and nobody confirmed.',
     expiring: a =>
       `⚠ The cache expires in ${a.left}. Any message renews it for free; after that, resending ${a.tokens} tokens ` +
-      (a.weight.kind === 'api' ? `costs ~${a.weight.cold}.` : `uses ~${a.weight.times}× a warm send of your plan's limits.`),
+      (a.weight.kind === 'api' ? `costs ~${a.weight.cold}.` : `uses ~${a.weight.times}× a warm send of your plan's limits${a.weight.cold ? ` (~${a.weight.cold} at API prices)` : ''}.`),
   },
   es: {
     header: 'Caché fría',
@@ -102,15 +102,15 @@ export const STRINGS: Record<Lang, Strings> = {
       `⚠ La caché del prompt venció hace ${a.ago}. Este mensaje reenvía ${a.tokens} tokens sin caché: ` +
       (a.weight.kind === 'api'
         ? `unos ${a.weight.cold} a precio de API, en vez de ${a.weight.warm} con la caché activa.`
-        : `gasta unas ${a.weight.times} veces más de los límites de tu plan que con la caché activa.`) +
+        : `gasta unas ${a.weight.times} veces más de los límites de tu plan que con la caché activa${a.weight.cold ? ` (~${a.weight.cold} a precio de API)` : ''}.`) +
       ' ¿Enviarlo igual?',
-    send: w => (w.kind === 'api' ? `Enviar igual (~${w.cold})` : 'Enviar igual'),
+    send: w => (w.cold ? `Enviar igual (~${w.cold})` : 'Enviar igual'),
     hold: 'No enviar',
     held: 'No se envió: la caché había vencido. Vuelve a enviarlo para seguir, o usa /clear para empezar de cero por menos.',
     heldUnanswered: 'No se envió: la caché había vencido y nadie lo confirmó.',
     expiring: a =>
       `⚠ La caché vence en ${a.left}. Cualquier mensaje la renueva gratis; después, reenviar ${a.tokens} tokens ` +
-      (a.weight.kind === 'api' ? `cuesta ~${a.weight.cold}.` : `gasta ~${a.weight.times} veces más de los límites de tu plan.`),
+      (a.weight.kind === 'api' ? `cuesta ~${a.weight.cold}.` : `gasta ~${a.weight.times} veces más de los límites de tu plan${a.weight.cold ? ` (~${a.weight.cold} a precio de API)` : ''}.`),
   },
   pt: {
     header: 'Cache frio',
@@ -118,15 +118,15 @@ export const STRINGS: Record<Lang, Strings> = {
       `⚠ O cache do prompt expirou há ${a.ago}. Esta mensagem reenvia ${a.tokens} tokens sem cache: ` +
       (a.weight.kind === 'api'
         ? `cerca de ${a.weight.cold} a preço de API, em vez de ${a.weight.warm} com o cache ativo.`
-        : `usa cerca de ${a.weight.times} vezes mais dos limites do seu plano do que com o cache ativo.`) +
+        : `usa cerca de ${a.weight.times} vezes mais dos limites do seu plano do que com o cache ativo${a.weight.cold ? ` (~${a.weight.cold} a preço de API)` : ''}.`) +
       ' Enviar mesmo assim?',
-    send: w => (w.kind === 'api' ? `Enviar mesmo assim (~${w.cold})` : 'Enviar mesmo assim'),
+    send: w => (w.cold ? `Enviar mesmo assim (~${w.cold})` : 'Enviar mesmo assim'),
     hold: 'Não enviar',
     held: 'Não enviado: o cache tinha expirado. Envie de novo para seguir, ou use /clear para recomeçar por menos.',
     heldUnanswered: 'Não enviado: o cache tinha expirado e ninguém confirmou.',
     expiring: a =>
       `⚠ O cache expira em ${a.left}. Qualquer mensagem o renova de graça; depois, reenviar ${a.tokens} tokens ` +
-      (a.weight.kind === 'api' ? `custa ~${a.weight.cold}.` : `usa ~${a.weight.times} vezes mais dos limites do seu plano.`),
+      (a.weight.kind === 'api' ? `custa ~${a.weight.cold}.` : `usa ~${a.weight.times} vezes mais dos limites do seu plano${a.weight.cold ? ` (~${a.weight.cold} a preço de API)` : ''}.`),
   },
   fr: {
     header: 'Cache froid',
@@ -134,14 +134,14 @@ export const STRINGS: Record<Lang, Strings> = {
       `⚠ Le cache du prompt a expiré il y a ${a.ago}. Ce message renvoie ${a.tokens} tokens sans cache : ` +
       (a.weight.kind === 'api'
         ? `environ ${a.weight.cold} au prix de l'API, au lieu de ${a.weight.warm} avec un cache actif.`
-        : `environ ${a.weight.times} fois plus des limites de votre forfait qu'avec un cache actif.`) +
+        : `environ ${a.weight.times} fois plus des limites de votre forfait qu'avec un cache actif${a.weight.cold ? ` (~${a.weight.cold} au prix de l'API)` : ''}.`) +
       " L'envoyer quand même ?",
-    send: w => (w.kind === 'api' ? `Envoyer quand même (~${w.cold})` : 'Envoyer quand même'),
+    send: w => (w.cold ? `Envoyer quand même (~${w.cold})` : 'Envoyer quand même'),
     hold: 'Ne pas envoyer',
     held: "Non envoyé : le cache avait expiré. Renvoyez-le pour continuer, ou faites /clear pour repartir à moindre coût.",
     heldUnanswered: "Non envoyé : le cache avait expiré et personne n'a confirmé.",
     expiring: a =>
       `⚠ Le cache expire dans ${a.left}. Tout message le renouvelle gratuitement ; ensuite, renvoyer ${a.tokens} tokens ` +
-      (a.weight.kind === 'api' ? `coûte ~${a.weight.cold}.` : `consomme ~${a.weight.times} fois plus des limites de votre forfait.`),
+      (a.weight.kind === 'api' ? `coûte ~${a.weight.cold}.` : `consomme ~${a.weight.times} fois plus des limites de votre forfait${a.weight.cold ? ` (~${a.weight.cold} au prix de l'API)` : ''}.`),
   },
 }

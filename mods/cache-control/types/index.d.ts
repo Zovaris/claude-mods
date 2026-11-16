@@ -22,6 +22,7 @@ declare module 'claude-code' {
       warmUntil: Shaped<number>
       lastPing: Shaped<Ping | null>
       guard: Shaped<boolean>
+      apiPrices: Shaped<boolean>
     }
   }
 }
