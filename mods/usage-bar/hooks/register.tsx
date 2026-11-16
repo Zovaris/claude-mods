@@ -30,8 +30,21 @@ async function refresh($: EngineInterface) {
     (usage?.rateLimits ?? []).map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt })),
   )
   const now = await $.clock.now()
-  if (list.length > 0) await update($, windows, () => list)
-  await update($, readAt, () => now)
+  if (list.length > 0) {
+    await update($, windows, () => list)
+    await update($, readAt, () => now)
+    await $.store.set('lastWindows', { at: now, list }).catch(() => undefined)
+  } else if ((await read($, windows)).length === 0) {
+    // Nothing reported yet in this run (a fresh load of the plugin, before
+    // the session's next reply): show the last reading while its windows
+    // haven't reset. The limits are the account's, so any session's will do.
+    const kept = (await $.store.get('lastWindows').catch(() => undefined)) as { at: number; list: Window[] } | undefined
+    const live = kept?.list?.filter(w => !w.resetsAt || Date.parse(w.resetsAt) > now) ?? []
+    if (live.length > 0) {
+      await update($, windows, () => live)
+      await update($, readAt, () => kept!.at)
+    }
+  }
 
   // The first reading of each window on the local day; a reset since then starts it over.
   const today = dayOf(now)

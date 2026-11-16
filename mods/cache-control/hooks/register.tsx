@@ -45,6 +45,9 @@ import { chip, slimBar, THEME_TONE } from './slim'
 
 const PANE = 'cache-control'
 const KEEP = 300
+/** How many requests a session keeps on disk, and for how many sessions. */
+const KEEP_SAVED = 60
+const KEEP_SESSIONS = 8
 const TOAST_MIN = 20_000
 const MAX_WARM = 12 * 3_600_000
 const DEFAULT_WARM = 2 * 3_600_000
@@ -159,7 +162,7 @@ async function ping($: EngineInterface) {
     const usd = costOf(sample, ttl)
     // Nothing read, or a large write: the cache had already gone, pinging is pointless.
     const ok = sample.read > 0 && sample.write < sample.read * 0.1
-    await update($, samples, list => [...list, sample].slice(-KEEP))
+    await record($, sample)
     await update($, lastPing, () => ({
       at: startedAt,
       read: sample.read,
@@ -207,6 +210,36 @@ async function tick($: EngineInterface, wantToast: boolean) {
 /** The length keep-warm was last started for, to mark it in the pane. */
 let armedFor = 0
 
+/**
+ * Records a request, and keeps the session's latest on disk too: a reload of
+ * the plugin (an update, or the desktop app resuming the session) starts its
+ * state empty, and without them the meter would wait for the next reply.
+ */
+async function record($: EngineInterface, sample: Sample) {
+  await update($, samples, list => [...list, sample].slice(-KEEP))
+  try {
+    const sid = await $.session.id()
+    await $.store.set(`samples:${sid}`, (await read($, samples)).slice(-KEEP_SAVED))
+    const ids = ((await $.store.get('sessions')) as string[] | undefined) ?? []
+    if (ids[ids.length - 1] !== sid) {
+      const next = [...ids.filter(x => x !== sid), sid]
+      for (const old of next.slice(0, -KEEP_SESSIONS)) await $.store.delete(`samples:${old}`)
+      await $.store.set('sessions', next.slice(-KEEP_SESSIONS))
+    }
+  } catch {
+    // the meter still works for this run; it just won't survive a reload
+  }
+}
+
+/** Picks up what this session measured before a reload. */
+async function restore($: EngineInterface) {
+  if ((await read($, samples)).length > 0) return
+  const sid = await $.session.id().catch(() => undefined)
+  if (!sid) return
+  const saved = await $.store.get(`samples:${sid}`).catch(() => undefined)
+  if (Array.isArray(saved) && saved.length > 0) await update($, samples, () => saved as Sample[])
+}
+
 async function arm($: EngineInterface, ms: number) {
   armedFor = ms
   const until = (await $.clock.now()) + Math.min(MAX_WARM, ms)
@@ -242,6 +275,7 @@ export const register: Register = (on, options) => {
       ttlVar: await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL').catch(none),
       disableAll: await $.env.get('DISABLE_PROMPT_CACHING').catch(none),
     }
+    await restore($).catch(() => undefined)
     setting = await readSettingTtl($)
     const language = await $.settings.read({ key: 'language' }).catch(() => undefined)
     settingLang = langOf(typeof language === 'string' ? language : undefined)
@@ -305,7 +339,7 @@ export const register: Register = (on, options) => {
         output: r.usage.output_tokens,
       }
       const before = await read($, samples)
-      await update($, samples, list => [...list, sample].slice(-KEEP))
+      await record($, sample)
       if (options.ttl !== '5m' && options.ttl !== '1h') {
         await refreshAccount($, options.ttl)
         const prev = before.filter(s => !s.isPing).at(-1)

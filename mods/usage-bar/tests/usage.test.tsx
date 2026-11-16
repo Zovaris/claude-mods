@@ -78,3 +78,35 @@ test('no windows, no band', async ($, on) => {
   const text = (await $.command.run({ command: 'limits', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
   expect(text).toContain('No usage windows')
 })
+
+test('after a reload, the last reading shows until the next reply, unless its windows reset', async ($, on) => {
+  const kept: Record<string, unknown> = {
+    lastWindows: {
+      at: NOW - 60_000,
+      list: [
+        { kind: 'five_hour', percentUsed: 85, resetsAt: new Date(NOW + 3_600_000).toISOString() },
+        { kind: 'seven_day', percentUsed: 78, resetsAt: new Date(NOW - 1000).toISOString() },
+      ],
+    },
+  }
+  on('store.get', (_, e) => ({ value: kept[e.key] }) as never)
+  on('store.set', (_, e) => {
+    kept[e.key] = e.value
+    return { value: undefined } as never
+  })
+  mock.clock(on, { now: NOW })
+  on('command.register', () => ({ value: { command: 'limits' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: [] } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({
+    plugin: 'usage-bar',
+    component: 'AbovePrompt',
+    surface: 'desktop',
+    props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+  })
+  const drawn = JSON.stringify(await band.drawn())
+  expect(drawn).toContain('85%')
+  expect(drawn).not.toContain('78%')
+  await band.unmount()
+})

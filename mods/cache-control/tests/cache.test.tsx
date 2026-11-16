@@ -220,3 +220,28 @@ test('with nothing measured yet, the row waits instead of vanishing', async ($, 
   expect(await band.find({ key: 'details' })).toBeDefined()
   await band.unmount()
 })
+
+test('what the session measured survives a reload of the plugin', async ($, on) => {
+  // The plugin's store, as it was left before the reload.
+  const kept: Record<string, unknown> = { 'samples:sess-1': [big(T0 + 2 * 3_600_000 - 2 * 60_000)] }
+  on('store.get', (_, e) => ({ value: kept[e.key] }) as never)
+  on('store.set', (_, e) => {
+    kept[e.key] = e.value
+    return { value: undefined } as never
+  })
+  on('store.delete', (_, e) => {
+    delete kept[e.key]
+    return { value: undefined } as never
+  })
+  on('store.keys', () => ({ value: Object.keys(kept) }) as never)
+  mock.clock(on, { now: T0 + 2 * 3_600_000 })
+  on('command.register', () => ({ value: { command: 'cache' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'sess-1' }) as never)
+  on('session.usage', () => ({ value: { startedAt: T0, context: { window: 1_000_000 }, rateLimits: [] } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
+  expect(JSON.stringify(await band.drawn())).not.toContain('waiting for the next reply')
+  expect(await band.find({ type: 'Text', text: /keep going/ })).toBeDefined()
+  await band.unmount()
+})
