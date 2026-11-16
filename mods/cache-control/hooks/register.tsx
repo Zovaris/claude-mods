@@ -240,9 +240,15 @@ async function restore($: EngineInterface) {
   if (Array.isArray(saved) && saved.length > 0) await update($, samples, () => saved as Sample[])
 }
 
+/**
+ * Extends the cache past its own lifetime: keep-warm runs until the cache's
+ * own expiry plus `ms`, pinging just before each expiry. Off leaves the cache
+ * to run out on its own, which costs nothing.
+ */
 async function arm($: EngineInterface, ms: number) {
   armedFor = ms
-  const until = (await $.clock.now()) + Math.min(MAX_WARM, ms)
+  const { view, now } = await snapshot($)
+  const until = now + view.leftMs + Math.min(MAX_WARM, ms)
   await update($, warmUntil, () => until)
   lastKey = ''
 }
@@ -408,7 +414,7 @@ export const register: Register = (on, options) => {
       await arm($, ms)
       const { ttl } = await snapshot($)
       return {
-        text: `Keeping the cache warm for ${fmtClock(Math.min(MAX_WARM, ms))}: a ping ${ttl === '1h' ? '10 min' : '1 min'} before it expires, while you are idle.`,
+        text: `Extending the cache ${fmtClock(Math.min(MAX_WARM, ms))} past its own expiry: a ping just before it runs out, while you are idle. /cache stop ends it.`,
       }
     }
     if (verb === 'guard' && (arg === 'on' || arg === 'off')) {
@@ -492,7 +498,7 @@ export const register: Register = (on, options) => {
             ) : (
               view.kind === 'cold' && <Text color="error">⚠ expired {fmtAgo(view.coldForMs ?? 0)} ago</Text>
             )}
-            {warm > now && chip($, e, `kept warm ${fmtClock(warm - now)}`, 'cool')}
+            {warm > now && chip($, e, `extended +${fmtAgo(armedFor || warm - now - view.leftMs)}`, 'cool')}
             <Text>
               <Text dimColor>  read </Text>
               <Text color="success">{fmtTokens(last.read)}</Text>
@@ -684,13 +690,11 @@ export const register: Register = (on, options) => {
         )}
 
         {/* Keep warm */}
-        {heading('Keep warm', warm > now ? `${fmtClock(warm - now)} left` : 'off')}
+        {heading('Extend the cache', warm > now ? `ends in ${fmtClock(warm - now)}` : 'off')}
         <Text dimColor>
           {warm > now
-            ? `A ping goes out ${ttl === '1h' ? '10 min' : '1 min'} before expiry while you are idle.`
-            : view.leftMs > 0
-              ? `Off: nothing is being sent. The countdown above is the cache running out on its own, at no cost; when you write again it starts over. Pick a length to keep it alive through a break.`
-              : 'Off: nothing is being sent. Pick a length to keep the cache alive through a break.'}
+            ? `The cache lasts ${ttl} on its own. While you're away, a ping just before it runs out renews it, until the extension ends. Off stops the pings; the cache then runs out on its own.`
+            : `The cache lasts ${ttl} after your last message on its own, at no cost: that's the countdown above. An extension keeps it past that, with a ping just before each expiry. Off: no pings, nothing sent.`}
           {pings.length ? ` ${pings.length} pings so far, ${fmtUsd(pingSpent)}.` : ''}
           {ping ? ` Last: ${ping.note}.` : ''}
         </Text>
@@ -702,7 +706,7 @@ export const register: Register = (on, options) => {
             label="Off"
             onPress={() => void update($, warmUntil, () => 0)}
           />
-          {([['warm-1h', '1 hour', 1], ['warm-3h', '3 hours', 3], ['warm-8h', '8 hours', 8]] as const).map(([key, label, hours]) => (
+          {([['warm-1h', '+1 hour', 1], ['warm-3h', '+3 hours', 3], ['warm-8h', '+8 hours', 8]] as const).map(([key, label, hours]) => (
             <Button
               key={key}
               variant={warm > now && armedFor === hours * 3_600_000 ? 'primary' : 'secondary'}

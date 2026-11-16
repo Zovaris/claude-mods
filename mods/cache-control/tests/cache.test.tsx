@@ -197,10 +197,11 @@ test('keep-warm starts and stops from the pane, for this session only', async ($
     props: { title: 'Cache', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 120 }, view: {} },
   })
   await pane.press({ key: 'warm-3h' })
-  expect(JSON.stringify(await pane.drawn())).toContain('3:00:00 left')
+  // An extension: the cache's own 3 minutes left, plus 3 hours.
+  expect(JSON.stringify(await pane.drawn())).toContain('ends in 3:03:00')
   expect(JSON.stringify(await pane.find({ key: 'warm-3h' }))).toContain('primary')
   await pane.press({ key: 'warm-off' })
-  expect(JSON.stringify(await pane.drawn())).not.toContain('3:00:00 left')
+  expect(JSON.stringify(await pane.drawn())).not.toContain('ends in')
   expect(JSON.stringify(await pane.find({ key: 'warm-off' }))).toContain('primary')
   // The row stays minimal: no buttons but Details.
   const band = await $.ui.mount({ plugin: 'cache-control', component: 'AbovePrompt', surface: 'desktop', props: BAND })
