@@ -11,6 +11,7 @@ Mods and themes for [Claude Code](https://code.claude.com). Mods add features to
 | [usage-bar](mods/usage-bar) | Your plan's usage windows, with pace and a daily budget | `/limits` |
 | [context-meter](mods/context-meter) | What fills the context window, and an auto-compact of your own | `/context-meter` |
 | [mod-manager](mods/mod-manager) | Every mod, theme and plugin: on, off, update, install | `/mods` |
+| [package-manager](mods/package-manager) | Detects npm, pnpm, yarn or bun per project and runs that one | `/pm` |
 
 ## Themes
 

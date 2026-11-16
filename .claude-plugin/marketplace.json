@@ -63,6 +63,20 @@
       ]
     },
     {
+      "name": "package-manager",
+      "source": "./mods/package-manager",
+      "description": "Detects each project's package manager (npm, pnpm, yarn or bun) and runs that one instead of whatever Claude typed",
+      "category": "productivity",
+      "keywords": [
+        "mod",
+        "npm",
+        "pnpm",
+        "yarn",
+        "bun",
+        "package-manager"
+      ]
+    },
+    {
       "name": "nebula",
       "source": "./themes/nebula",
       "description": "A space look for light and dark, with a violet and rose nebula",

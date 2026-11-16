@@ -1,0 +1,9 @@
+{
+  "name": "package-manager",
+  "version": "0.1.0",
+  "description": "Detects each project's JavaScript package manager (npm, pnpm, yarn or bun) from its lockfile and rewrites npm, npx and the others to match, so Claude runs the right one",
+  "license": "MIT",
+  "author": { "name": "Zovaris" },
+  "homepage": "https://github.com/Zovaris/claude-mods/tree/main/mods/package-manager",
+  "repository": "https://github.com/Zovaris/claude-mods"
+}
