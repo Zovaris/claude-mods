@@ -23,10 +23,23 @@ export function langOf(value: string | undefined | null): Lang | null {
 
 /** Words common in one language and rare in the others. */
 const WORDS: Record<Lang, Set<string>> = {
-  en: new Set('the and to of is that it you for with this can what how but please would should there'.split(' ')),
-  es: new Set('el los las y una por con está qué cómo pero lo mi también puedes hacer esto eso más hay ya muy quiero creo cuando porque bueno'.split(' ')),
-  pt: new Set('os você não uma isso mais muito então também fazer quero acho quando porque está obrigado'.split(' ')),
-  fr: new Set("le les des et une pour avec pas est je vous ce mais aussi très c'est faire veux quand parce".split(' ')),
+  en: new Set(
+    'the and to of is are that it you for with this can what how but please would should there have not be was if do my we on your just also like want'.split(' '),
+  ),
+  es: new Set(
+    ('el los las y una del al por con está están qué cómo pero lo mi también puedes hacer esto eso ese esa este esta más hay ya muy quiero ' +
+      'creo cuando porque bueno entonces nuestro nuestra mucha mucho gente caso tampoco nos cuesta igual sería tipo algo así cada todo ahora aquí ' +
+      'puede tiene son cuenta pues sí podemos hacemos tengo vamos')
+      .split(' '),
+  ),
+  pt: new Set(
+    ('os você não uma isso mais muito então também fazer quero acho quando porque está obrigado do da dos das seu sua ao pelo pela num ' +
+      'agora aqui tudo assim nosso nossa gente ainda pode tem são podemos vamos')
+      .split(' '),
+  ),
+  fr: new Set(
+    "le les des et une pour avec pas est je vous ce mais aussi très c'est faire veux quand parce du au aux sur nous être avoir tout peux suis".split(' '),
+  ),
 }
 
 export type Tally = Record<Lang, number>
