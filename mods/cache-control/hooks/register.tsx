@@ -688,7 +688,9 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           {warm > now
             ? `A ping goes out ${ttl === '1h' ? '10 min' : '1 min'} before expiry while you are idle.`
-            : 'Pings the cache before it expires, so a break does not cost a cold send.'}
+            : view.leftMs > 0
+              ? `Off: nothing is being sent. The countdown above is the cache running out on its own, at no cost; when you write again it starts over. Pick a length to keep it alive through a break.`
+              : 'Off: nothing is being sent. Pick a length to keep the cache alive through a break.'}
           {pings.length ? ` ${pings.length} pings so far, ${fmtUsd(pingSpent)}.` : ''}
           {ping ? ` Last: ${ping.note}.` : ''}
         </Text>
