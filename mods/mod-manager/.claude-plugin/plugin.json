@@ -3,5 +3,10 @@
   "version": "0.2.1",
   "description": "/mods: see every installed mod, theme and plugin, turn them on and off, update them, and install what your marketplaces offer",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Zovaris"
+  },
+  "homepage": "https://github.com/Zovaris/claude-mods/tree/main/mods/mod-manager",
+  "repository": "https://github.com/Zovaris/claude-mods"
 }

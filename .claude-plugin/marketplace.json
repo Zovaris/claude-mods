@@ -2,7 +2,7 @@
   "name": "claude-mods",
   "description": "Claude Code mods: tool and connector switches, prompt-cache, usage and context meters, a mod manager, and looks for the desktop app",
   "owner": {
-    "name": "Bryan Villafuerte"
+    "name": "Zovaris"
   },
   "plugins": [
     {

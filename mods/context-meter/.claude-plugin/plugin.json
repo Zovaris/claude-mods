@@ -3,5 +3,10 @@
   "version": "0.2.1",
   "description": "What fills your context window, above the prompt and in a pane, with your own auto-compact threshold, an ask-first mode and a summary style for every compaction",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Zovaris"
+  },
+  "homepage": "https://github.com/Zovaris/claude-mods/tree/main/mods/context-meter",
+  "repository": "https://github.com/Zovaris/claude-mods"
 }
