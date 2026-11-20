@@ -156,10 +156,10 @@ async function ping($: EngineInterface) {
       turnId: 'ping',
       model,
       startedAt,
-      read: u.cache_read_input_tokens,
-      write: u.cache_creation_input_tokens,
-      fresh: u.input_tokens,
-      output: u.output_tokens,
+      read: u.cache_read_input_tokens ?? 0,
+      write: u.cache_creation_input_tokens ?? 0,
+      fresh: u.input_tokens ?? 0,
+      output: u.output_tokens ?? 0,
       isPing: true,
     }
     const { ttl } = await snapshot($)
@@ -360,10 +360,10 @@ export const register: Register = (on, options) => {
         turnId: e.turnId,
         model: r.usage.model || e.model,
         startedAt,
-        read: r.usage.cache_read_input_tokens,
-        write: r.usage.cache_creation_input_tokens,
-        fresh: r.usage.input_tokens,
-        output: r.usage.output_tokens,
+        read: r.usage.cache_read_input_tokens ?? 0,
+        write: r.usage.cache_creation_input_tokens ?? 0,
+        fresh: r.usage.input_tokens ?? 0,
+        output: r.usage.output_tokens ?? 0,
       }
       const before = await read($, samples)
       await record($, sample)
@@ -412,12 +412,13 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    isBusy = false
+    if (!e.agentId) isBusy = false
     return next(e)
   })
 
   on('command.run', { command: 'cache' }, async ($, e) => {
-    const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/)
+    const [verb = '', ...rest] = e.args.trim().toLowerCase().split(/\s+/)
+    const arg = rest.join(' ')
     if (verb === '') {
       await $.ui.open({ id: PANE, title: 'Cache' })
       return { text: 'Cache pane opened.' }

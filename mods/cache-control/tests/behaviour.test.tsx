@@ -314,3 +314,36 @@ test('a hit after a gap the pings bridged does not prove a 1 hour cache', async 
   expect(status).not.toContain('observed from traffic')
   expect(status).toContain('5m cache')
 })
+
+test('a subagent finishing mid-turn does not release the busy flag', async ($, on) => {
+  let calls = 0
+  on('model.fork', () => {
+    calls += 1
+    return { value: { isAnswered: true, usage: usage(200_000, 0) } } as never
+  })
+  on('turn.complete', () => ({ text: '' }) as never)
+  const clock = base(on, T0 + 1000, [big(T0)], true, PLAN)
+  await start($)
+  await $.command.run(run('warm 1h'))
+  await $.prompt.submit({ text: 'hello', origin: { kind: 'composer' }, wait: false })
+  await $.turn.complete({ turnId: 'sub1', agentId: 'agent-1', answer: 'done', durationMs: 10, isAborted: false, reason: 'end_turn' } as never)
+  await clock.advance(52 * MIN)
+  expect(calls).toBe(0)
+})
+
+test('/cache warm takes a duration with spaces in it', async ($, on) => {
+  base(on, T0 + 1000, [big(T0)])
+  await start($)
+  expect((await $.command.run(run('warm 1h 30m'))).text).toContain('1:30:00')
+  expect((await $.command.run(run('warm 2 h'))).text).toContain('2:00:00')
+})
+
+test('a reply whose usage lacks cache counters never puts NaN on screen', async ($, on) => {
+  base(on, T0 + 1000)
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], usage: { model: 'claude-opus-5-5', input_tokens: 1000, output_tokens: 5 } } as never
+  })
+  await start($)
+  await step($, 't1')
+  expect((await $.command.run(run('status'))).text).not.toContain('NaN')
+})
