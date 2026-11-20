@@ -18,6 +18,8 @@ Or from `/mods`, if you have [mod-manager](../../mods/mod-manager). It loads in 
 
 A slim bar split by what fills the window (system prompt, tools, MCP tools, memory files, skills, agents, messages), the share used, a state (**roomy**, **filling**, **getting full**, **compacts soon**, **compacting next**), and a mark where compaction kicks in: your threshold, or Claude Code's own.
 
+The total and the percentage are the tokens and window of the last API response, so they match what the model was sent; until one is measured they fall back to the local estimate. The categories always come from the estimate. The row refreshes when a response moves the figure, while tools run (at most every two seconds) and at the end of each turn. The mark is rescaled into the window shown.
+
 ## The pane
 
 `/context-meter`, or **Details** on the row:

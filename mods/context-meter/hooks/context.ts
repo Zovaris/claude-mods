@@ -24,16 +24,34 @@ export const usedCategories = (s: Snapshot): Category[] =>
 
 export const bufferTokens = (s: Snapshot) => s.categories.filter(c => c.kind === 'buffer').reduce((a, c) => a + c.tokens, 0)
 
-/** Where auto-compact kicks in, as a share of the window; null without a buffer. */
+/**
+ * What the bar shows: the tokens and window the last API response measured when
+ * there are, else the breakdown's local estimate over the compaction window.
+ */
+export function fillOf(s: Snapshot): { tokens: number; window: number } {
+  if (Number.isFinite(s.measuredTokens) && Number.isFinite(s.window) && s.window! > 0) return { tokens: s.measuredTokens!, window: s.window! }
+  return { tokens: s.totalTokens, window: Math.max(1, s.rawMaxTokens) }
+}
+
+/** The share of the shown window that is filled, 0 to 1 and beyond. */
+export const usedShare = (s: Snapshot) => {
+  const f = fillOf(s)
+  return f.tokens / f.window
+}
+
+/**
+ * Where auto-compact kicks in, as a share of the shown window; null without a buffer.
+ * The line sits at rawMaxTokens minus the buffer, rescaled when the window shown is another.
+ */
 export function compactAt(s: Snapshot): number | null {
   const buffer = bufferTokens(s)
   if (buffer <= 0 || s.rawMaxTokens <= 0) return null
-  return Math.max(0, (s.rawMaxTokens - buffer) / s.rawMaxTokens)
+  return Math.min(1, Math.max(0, (s.rawMaxTokens - buffer) / fillOf(s).window))
 }
 
 /** The bar's parts: each used category in its color, in window shares. */
 export function partsOf(s: Snapshot): Part[] {
-  const max = Math.max(1, s.rawMaxTokens)
+  const max = fillOf(s).window
   return usedCategories(s).map(c => {
     const st = styleOf(c.name)
     return { share: c.tokens / max, tone: 'muted' as Tone, hex: st.hex, theme: st.theme }
@@ -44,7 +62,7 @@ export type ContextState = { label: string; tone: Tone }
 
 /** roomy · filling · getting full · compacts soon · over the line */
 export function contextState(s: Snapshot, mark?: number | null): ContextState {
-  const used = s.totalTokens / Math.max(1, s.rawMaxTokens)
+  const used = usedShare(s)
   const line = mark ?? compactAt(s) ?? 1
   const toLine = used / line
   if (toLine >= 1) return { label: 'compacting next', tone: 'error' }
@@ -109,7 +127,7 @@ export function joinInstructions(focus: string | undefined, a: AutoSettings): st
 /** Whether the window has crossed the mod's threshold (or a snooze above it). */
 export function isDue(s: Snapshot, a: AutoSettings, snooze: number): boolean {
   if (a.threshold === null) return false
-  const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
+  const used = usedShare(s) * 100
   return used >= Math.max(a.threshold, snooze)
 }
 

@@ -4,8 +4,14 @@ export type Named = { name: string; tokens: number; detail?: string }
 /** The context as the last breakdown measured it, kept small. */
 export type Snapshot = {
   model: string
+  /** The breakdown's local estimate. */
   totalTokens: number
+  /** The compaction window the breakdown measured against. */
   rawMaxTokens: number
+  /** Tokens of the last API response, when it measured them; shown in place of the estimate. */
+  measuredTokens?: number
+  /** The model's window, the denominator of `measuredTokens`. */
+  window?: number
   source: string
   categories: Category[]
   memoryFiles: Named[]
