@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { compareVersions, kindOf } from '../hooks/catalog'
+import { compareVersions, isNewer, kindOf } from '../hooks/catalog'
+import type { Entry } from '../types'
 
 test('versions and kinds', () => {
   expect(compareVersions('0.4.1', '0.4.0') > 0).toBe(true)
@@ -10,6 +11,25 @@ test('versions and kinds', () => {
   expect(kindOf({ category: 'theme', hasModules: true })).toBe('theme')
   expect(kindOf({ hasModules: true })).toBe('mod')
   expect(kindOf({ hasModules: false })).toBe('plugin')
+})
+
+test('a prerelease comes before its release, and build metadata or a v prefix changes nothing', () => {
+  expect(compareVersions('1.0.0', '1.0.0-beta.1') > 0).toBe(true)
+  expect(compareVersions('1.0.0-beta.1', '1.0.0') < 0).toBe(true)
+  expect(compareVersions('1.0.0-beta.2', '1.0.0-beta.1') > 0).toBe(true)
+  expect(compareVersions('1.0.0-beta.11', '1.0.0-beta.2') > 0).toBe(true)
+  expect(compareVersions('1.0.0-rc.1', '1.0.0-beta.9') > 0).toBe(true)
+  expect(compareVersions('1.0.1-beta.1', '1.0.0') > 0).toBe(true)
+  expect(compareVersions('1.0.0+abc', '1.0.0')).toBe(0)
+  expect(compareVersions('v1.2.0', '1.1.9') > 0).toBe(true)
+  const e = (version: string, latest: string) => ({ installed: true, version, latest }) as Entry
+  expect(isNewer(e('1.0.0', '1.0.0-beta.1'))).toBe(false)
+  expect(isNewer(e('1.0.0-beta.1', '1.0.0'))).toBe(true)
+})
+
+test('versions that are not semver (a commit hash) are never called newer', () => {
+  expect(compareVersions('a1b2c3d', 'f9e8d7c')).toBe(0)
+  expect(compareVersions('1.2.0', 'a1b2c3d')).toBe(0)
 })
 
 const H = '/home/me'
@@ -44,9 +64,9 @@ const FILES: Record<string, unknown> = {
   [`${H}/cache/nebula/0.2.0/.claude-plugin/plugin.json`]: { version: '0.2.0', description: 'A space look' },
 }
 
-const engine = (on: On, ran: string[][]) => {
+const engine = (on: On, ran: string[][], env: Record<string, string> = { HOME: H }, exitCode = 0) => {
   mock.store(on)
-  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? H : undefined }) as never)
+  on('env.get', (_, e) => ({ value: env[e.name] }) as never)
   on('fs.read', (_, e) => {
     const f = FILES[e.path]
     if (f === undefined) throw new Error('ENOENT')
@@ -55,7 +75,7 @@ const engine = (on: On, ran: string[][]) => {
   on('process.run', (_, e) => {
     ran.push([...e.argv])
     if (e.argv[0] === '/bin/sh') return { value: { exitCode: 0, stdout: '/usr/local/bin/claude\n', stderr: '' } } as never
-    return { value: { exitCode: 0, stdout: '✔ Done\n', stderr: '' } } as never
+    return { value: { exitCode, stdout: exitCode === 0 ? '✔ Done\n' : '', stderr: exitCode === 0 ? '' : 'boom\n' } } as never
   })
   on('command.register', () => ({ value: { command: 'mods' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -124,6 +144,38 @@ test('where the session cannot reload plugins, the pane says when changes load',
   await ui.press({ key: 'reload' })
   expect(JSON.stringify(await ui.drawn())).toContain('changes load in your next session')
   await ui.press({ key: 'update:usage-bar@claude-mods' })
+  expect(await ui.find({ key: 'reload' })).toBeUndefined()
+  await ui.unmount()
+})
+
+const open = async ($: Parameters<Parameters<typeof test>[1]>[0]) => {
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'mods', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  return $.ui.mount({ ...PANE, surface: 'desktop' })
+}
+
+test('checking marketplaces for updates changes nothing that needs a reload', async ($, on) => {
+  const ran: string[][] = []
+  engine(on, ran)
+  const ui = await open($)
+  await ui.press({ key: 'check' })
+  expect(ran.some(a => a.join(' ') === '/usr/local/bin/claude plugin marketplace update claude-mods')).toBe(true)
+  expect(await ui.find({ key: 'reload' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an empty CLAUDE_CONFIG_DIR falls back to ~/.claude', async ($, on) => {
+  engine(on, [], { HOME: H, CLAUDE_CONFIG_DIR: '' })
+  const ui = await open($)
+  expect(JSON.stringify(await ui.drawn())).toContain('3 installed')
+  await ui.unmount()
+})
+
+test('a failing claude command shows why and offers no reload', async ($, on) => {
+  engine(on, [], { HOME: H }, 1)
+  const ui = await open($)
+  await ui.press({ key: 'update:usage-bar@claude-mods' })
+  expect(JSON.stringify(await ui.drawn())).toContain('Failed: boom')
   expect(await ui.find({ key: 'reload' })).toBeUndefined()
   await ui.unmount()
 })

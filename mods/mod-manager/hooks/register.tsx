@@ -118,7 +118,7 @@ async function refresh($: EngineInterface) {
 }
 
 /** Runs `claude plugin …`, then reads the files again. */
-async function run($: EngineInterface, label: string, args: string[]): Promise<boolean> {
+async function run($: EngineInterface, label: string, args: string[], opts: { needsReload?: boolean } = {}): Promise<boolean> {
   if (await read($, busy)) return false
   await update($, busy, () => label)
   try {
@@ -132,7 +132,7 @@ async function run($: EngineInterface, label: string, args: string[]): Promise<b
     const out = (r.stdout + r.stderr).trim().split('\n').filter(Boolean).pop() ?? ''
     if (r.exitCode === 0) {
       await update($, note, () => out.replace(/^✔\s*/, ''))
-      await update($, dirty, () => true)
+      if (opts.needsReload !== false) await update($, dirty, () => true)
       return true
     }
     await update($, note, () => `Failed: ${out || `exit ${r.exitCode}`}`)
@@ -193,7 +193,7 @@ export const register: Register = on => {
     const r = await next(e)
     const dir = await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)
     const home = await $.env.get('HOME').catch(() => undefined)
-    configDir = dir ?? (home ? `${home}/.claude` : '.claude')
+    configDir = dir || (home ? `${home}/.claude` : '.claude')
     await $.command
       .register({ name: 'mods', description: 'Your mods, themes and plugins: on, off, update, install' })
       .catch(err => $.ui.log(`mod-manager: /mods not registered: ${String(err)}`, { to: 'debug' }))
@@ -309,7 +309,7 @@ export const register: Register = on => {
                 label="Check for updates"
                 onPress={() =>
                   void (async () => {
-                    for (const mk of markets) await run($, `Checking ${mk}…`, ['plugin', 'marketplace', 'update', mk])
+                    for (const mk of markets) await run($, `Checking ${mk}…`, ['plugin', 'marketplace', 'update', mk], { needsReload: false })
                   })()
                 }
               />
