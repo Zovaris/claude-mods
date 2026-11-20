@@ -42,7 +42,8 @@ function withoutSkills(text: string, off: Set<string>): string {
   const out: string[] = []
   let isDropping = false
   for (const line of lines) {
-    const m = /^- ([^:\s]+):/.exec(line)
+    // A plugin's skill is `plugin:skill`: the name runs to the first colon that's followed by a space.
+    const m = /^- (\S+?):(?:\s|$)/.exec(line)
     if (m) isDropping = off.has(m[1] ?? '')
     else if (/^\S/.test(line)) isDropping = false
     if (!isDropping) out.push(line)
@@ -198,6 +199,8 @@ export const register: Register = on => {
   // The gate: a call to anything blocked never runs.
   on('tool.call', async ($, e, next) => {
     const off = await read($, disabled)
+    // The mod's own connector server is never gated, or it couldn't switch connectors.
+    if (LOCKED.has(serverOf(e.tool) ?? '')) return next(e)
     if (isBlocked(off, e.tool)) {
       return {
         deny: `The user turned off "${e.tool}" with the tool-toggle mod. Don't retry it; use another tool or ask them to turn it on with /tools.`,
@@ -274,6 +277,7 @@ export const register: Register = on => {
         }
       }
       const name = matches[0]?.name ?? word
+      if (LOCKED.has(matches[0]?.server ?? '')) return { text: `${shortName(matches[0] as ToolEntry)} can't be turned off: this mod uses it.` }
       await save($, o => (verb === 'off' ? [...o, name] : o.filter(x => x !== name)))
       return { text: `${shortName(matches[0] ?? { name, server: null })}: ${verb}` }
     }
@@ -414,7 +418,7 @@ export const register: Register = on => {
       void (async () => {
         if (!isGroupOn(g, off)) {
           // The server goes on with every other tool of it left off.
-          await save($, o => [...o, ...g.tools.filter(x => x.name !== t.name).map(x => x.name)])
+          await save($, o => [...o.filter(x => x !== t.name), ...g.tools.filter(x => x.name !== t.name).map(x => x.name)])
           await setGroup($, g, true)
           return
         }
@@ -431,7 +435,7 @@ export const register: Register = on => {
               {label}
             </Text>
           </Box>
-          <Button key={`tool:${t.name}`} plain dimColor label={isOn ? 'Block' : 'Allow'} onPress={() => flipTool(g, t)} />
+          {!LOCKED.has(g.prefix) && <Button key={`tool:${t.name}`} plain dimColor label={isOn ? 'Block' : 'Allow'} onPress={() => flipTool(g, t)} />}
         </Box>
       )
     }
@@ -518,7 +522,7 @@ export const register: Register = on => {
     const skillResults = q ? skillList.filter(sk => sk.name.toLowerCase().includes(q)) : []
     const connectors = gs.filter(g => g.section === 'connector')
     const onConnectors = connectors.filter(g => isGroupOn(g, off)).length
-    const blockedTools = off.filter(x => !x.startsWith('mcp:')).length
+    const blockedTools = off.filter(x => !x.startsWith('mcp:') && !x.startsWith('skill:')).length
     const totalTools = gs.reduce((a, g) => a + (isGroupOn(g, off) ? g.tools.filter(t => !off.includes(t.name)).length : 0), 0)
 
     return (

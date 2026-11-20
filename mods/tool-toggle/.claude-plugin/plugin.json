@@ -1,6 +1,6 @@
 {
   "name": "tool-toggle",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Turn connectors, MCP servers, single tools and skills on and off from a pane or with /tools",
   "license": "MIT",
   "types": "./types/index.d.ts",

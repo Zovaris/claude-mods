@@ -17,7 +17,7 @@
  */
 import type { EngineInterface, Register } from 'claude-code'
 
-import { detectIn, leadingCd, rewrite } from './pm'
+import { detectIn, leadingCd, resolveDir, rewrite } from './pm'
 import type { Detected } from './pm'
 
 type Found = (Detected & { root: string }) | null
@@ -30,8 +30,6 @@ const parentOf = (dir: string) => {
   const i = dir.replace(/\/+$/, '').lastIndexOf('/')
   return i <= 0 ? '/' : dir.slice(0, i)
 }
-
-const join = (dir: string, rel: string) => (rel.startsWith('/') ? rel : `${dir.replace(/\/+$/, '')}/${rel}`)
 
 /** Looks up from `dir` for the folder that names a manager. */
 async function detect($: EngineInterface, dir: string): Promise<Found> {
@@ -94,7 +92,10 @@ export const register: Register = on => {
     const cwd = await $.session.cwd().catch(() => undefined)
     if (!cwd) return next(e)
     const cd = leadingCd(command)
-    const found = await detect($, cd ? join(cwd, cd) : cwd)
+    const dir = cd ? resolveDir(cwd, cd) : cwd
+    // A folder it can't place (`cd ~/x`) isn't this project: leave the command be.
+    if (!dir) return next(e)
+    const found = await detect($, dir)
     if (!found || (await isOff($, found.root))) return next(e)
     const bins = new Set((await $.fs.list(`${found.root}/node_modules/.bin`).catch(() => [])).map(f => f.name))
     const { command: rewritten, changes } = rewrite(command, found, bin => bins.has(bin))
