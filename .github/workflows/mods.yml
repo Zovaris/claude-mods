@@ -1,0 +1,55 @@
+name: mods
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mods-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mods:
+    name: mods
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLAUDE_CODE_VERSION: 2.1.327
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the Claude Code CLI
+        run: |
+          npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+          claude plugin test --help
+
+      - name: Validate and test every mod
+        run: |
+          set -u
+          shopt -s nullglob
+          mods=(mods/*/)
+          if [ "${#mods[@]}" -eq 0 ]; then
+            echo "::error::no mods found under mods/"
+            exit 1
+          fi
+          failed=()
+          for dir in "${mods[@]}"; do
+            mod="${dir%/}"
+            echo "::group::${mod}"
+            if ! claude plugin validate "$mod"; then failed+=("validate ${mod}"); fi
+            if ! claude plugin test "$mod"; then failed+=("test ${mod}"); fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            printf '::error::failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
