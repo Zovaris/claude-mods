@@ -7,7 +7,10 @@
  *     MCP tools per server, skills and agents, and a compact button with an
  *     optional focus for the summary
  *   - the breakdown is the one /context draws, read with `summary` (estimated
- *     locally, no extra requests), after each turn and on demand
+ *     locally, no extra requests), for the categories; the total and percent are
+ *     the tokens and window of the last API response when it measured them
+ *   - refreshed on session.measure (context changed), turn.step (throttled),
+ *     turn.complete and on demand
  */
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -18,6 +21,7 @@ import {
   compactAt,
   contextState,
   DEFAULT_AUTO,
+  fillOf,
   fmtTokens,
   isDue,
   joinInstructions,
@@ -28,11 +32,12 @@ import {
   STYLES,
   styleOf,
   usedCategories,
+  usedShare,
 } from './context'
 import { chip, slimBar } from './slim'
 
 const PANE = 'context-meter'
-const snapshot = atom({ plugin: 'context-meter', key: 'snapshot' } as const, null, { shape: 'snapshot-1' })
+const snapshot = atom({ plugin: 'context-meter', key: 'snapshot' } as const, null, { shape: 'snapshot-2' })
 const focus = atom({ plugin: 'context-meter', key: 'focus' } as const, '', { shape: 'focus-1' })
 const open = atom({ plugin: 'context-meter', key: 'open' } as const, ['categories'], { shape: 'open-1' })
 const busy = atom({ plugin: 'context-meter', key: 'busy' } as const, false, { shape: 'busy-1' })
@@ -41,6 +46,10 @@ const snooze = atom({ plugin: 'context-meter', key: 'snooze' } as const, 0, { sh
 
 let home: string | undefined
 let isAsking = false
+let lastRefresh = 0
+
+/** At most one refresh per turn step in this many ms. */
+const STEP_EVERY = 2000
 
 const setAuto = async ($: EngineInterface, fn: (a: AutoSettings) => AutoSettings) => {
   await update($, auto, fn)
@@ -48,6 +57,7 @@ const setAuto = async ($: EngineInterface, fn: (a: AutoSettings) => AutoSettings
 }
 
 async function refresh($: EngineInterface) {
+  lastRefresh = await $.clock.now()
   const usage = await $.session.usage({ breakdown: 'summary' }).catch(() => undefined)
   const b = usage?.context.breakdown
   if (!b) return
@@ -72,6 +82,9 @@ async function refresh($: EngineInterface) {
     model: b.model,
     totalTokens: b.totalTokens,
     rawMaxTokens: b.rawMaxTokens,
+    ...(Number.isFinite(usage?.context.tokens) && Number.isFinite(usage?.context.window) && usage!.context.window > 0
+      ? { measuredTokens: usage!.context.tokens, window: usage!.context.window }
+      : {}),
     source: String(b.autocompactSource),
     categories: b.categories.map(c => ({ name: c.name, tokens: c.tokens, kind: String(c.kind) })),
     memoryFiles: b.memoryFiles.map(f => ({ name: f.path, tokens: f.tokens, detail: f.type })).sort((a, z) => z.tokens - a.tokens),
@@ -109,7 +122,8 @@ async function decide($: EngineInterface) {
   const s = await read($, snapshot)
   const a = await read($, auto)
   if (!s || !isDue(s, a, await read($, snooze))) return
-  const used = Math.round((s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100)
+  const { tokens } = fillOf(s)
+  const used = Math.round(usedShare(s) * 100)
   if (a.mode === 'auto') {
     await compact($, '', `Auto-compacted at ${used}% (your threshold is ${a.threshold}%).`)
     return
@@ -120,7 +134,7 @@ async function decide($: EngineInterface) {
     const later = `Ask again at ${Math.min(95, used + 10)}%`
     const off = 'Not this session'
     const answer = await $.ui.ask(
-      `The context is at ${used}% (${fmtTokens(s.totalTokens)} tokens), past your ${a.threshold}% threshold. Compact now? Type under Other what the summary should keep.`,
+      `The context is at ${used}% (${fmtTokens(tokens)} tokens), past your ${a.threshold}% threshold. Compact now? Type under Other what the summary should keep.`,
       { options: [now, later, off], header: 'Context' },
     )
     if (answer === now) await compact($, '', `Compacted at ${used}%.`)
@@ -154,6 +168,23 @@ export const register: Register = on => {
     void refresh($)
       .then(() => $.clock.after(1200, () => void decide($).catch(() => undefined)))
       .catch(() => undefined)
+    return r
+  })
+
+  on('session.measure', async ($, e, next) => {
+    const r = await next(e)
+    if (e.changed.includes('context')) void refresh($).catch(() => undefined)
+    return r
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    const r = yield* next(e)
+    if (e.agentId) return r
+    const now = await $.clock.now()
+    if (now - lastRefresh >= STEP_EVERY) {
+      lastRefresh = now
+      void refresh($).catch(() => undefined)
+    }
     return r
   })
 
@@ -215,7 +246,8 @@ export const register: Register = on => {
     const s = await read($, snapshot)
     if (e.props.hasSurvey || !s) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
+    const fill = fillOf(s)
+    const used = usedShare(s) * 100
     const a = await read($, auto)
     const line = markOf(s, a)
     const state = contextState(s, line)
@@ -227,7 +259,7 @@ export const register: Register = on => {
           <Text>{pct(used)}</Text>
           {chip($, e, state.label, state.tone)}
           <Text dimColor>
-            {`${fmtTokens(s.totalTokens)} of ${fmtTokens(s.rawMaxTokens)}${line !== null ? ` · ${a.threshold !== null ? 'auto-compact' : 'compacts'} at ${pct(line * 100)}` : ''}`}
+            {`${fmtTokens(fill.tokens)} of ${fmtTokens(fill.window)}${line !== null ? ` · ${a.threshold !== null ? 'auto-compact' : 'compacts'} at ${pct(line * 100)}` : ''}`}
           </Text>
         </Box>
         <Button key="details" plain dimColor label="Details" onPress={() => void openPane($)} />
@@ -256,13 +288,14 @@ export const register: Register = on => {
       )
     }
 
-    const used = (s.totalTokens / Math.max(1, s.rawMaxTokens)) * 100
+    const fill = fillOf(s)
+    const used = usedShare(s) * 100
     const a = await read($, auto)
     const snoozed = await read($, snooze)
     const native = compactAt(s)
     const line = markOf(s, a)
     const state = contextState(s, line)
-    const free = Math.max(0, s.rawMaxTokens - bufferTokens(s) - s.totalTokens)
+    const free = Math.max(0, s.rawMaxTokens - bufferTokens(s) - fill.tokens)
     const toggle = (k: string) => void update($, open, o => (o.includes(k) ? o.filter(x => x !== k) : [...o, k]))
 
     // A section: a heading with a count and Show/Hide, then its rows.
@@ -310,14 +343,14 @@ export const register: Register = on => {
       </Box>
     )
 
-    const share = (n: number) => pct((n / Math.max(1, s.rawMaxTokens)) * 100)
+    const share = (n: number) => pct((n / fill.window) * 100)
     const total = (xs: Named[]) => xs.reduce((a, x) => a + x.tokens, 0)
 
     return (
       <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between" alignItems="center">
           <Text size="heading" weight="semibold">
-            {`${fmtTokens(s.totalTokens)} of ${fmtTokens(s.rawMaxTokens)}`}
+            {`${fmtTokens(fill.tokens)} of ${fmtTokens(fill.window)}`}
           </Text>
           {chip($, e, state.label, state.tone)}
         </Box>
