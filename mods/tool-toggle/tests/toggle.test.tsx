@@ -21,6 +21,7 @@ const TOOLS = [
   { name: `mcp__${G}__send_message`, description: 'send', mcp: true },
   { name: `mcp__${G}__get_thread`, description: 'read', mcp: true },
   { name: 'mcp__ccd_view__show_pane', description: 'pane', mcp: true },
+  { name: 'mcp__ccd_connectors__set_session_connector_enabled', description: 'set', mcp: true },
 ]
 
 const engine = (on: On, sets: { connector: unknown; enabled: unknown }[]) => {
@@ -113,4 +114,77 @@ test('a skill turned off leaves the listing, the Skill tool and its own prompt',
 
   await $.command.run(run('on commit'))
   expect((await $.tool.call({ tool: 'Skill', skill: 'commit' } as never)).deny).toBeUndefined()
+})
+
+const SKILLS = [
+  { name: 'commit', source: 'userSettings', tokens: 5 },
+  { name: 'pr:pr', source: 'plugin', pluginName: 'pr', tokens: 5 },
+  { name: 'commit:commit', source: 'plugin', pluginName: 'commit', tokens: 5 },
+]
+const withSkills = (on: On) =>
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { window: 1_000_000, breakdown: { skills: { totalSkills: 3, includedSkills: 3, tokens: 15, skillFrontmatter: SKILLS } } as never },
+      rateLimits: [],
+    },
+  }))
+const settle = () => new Promise(r => setTimeout(r, 30))
+
+test('a plugin skill (name with a colon) leaves the listing too', async ($, on) => {
+  engine(on, [])
+  withSkills(on)
+  on('prompt.attachment', (_, e) => ({ text: e.text }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await settle()
+
+  expect((await $.command.run(run('off commit:commit'))).text).toBe('Skill commit:commit: off')
+  const listing = '- commit: Plain commit\n- commit:commit: Commits the changes: in small steps\n  more text\n- pr:pr: Opens a PR\nTail'
+  const shown = await $.prompt.attachment({ type: 'skill_listing', text: listing, origin: { kind: 'engine' } } as never)
+  expect(shown.text).toBe('- commit: Plain commit\n- pr:pr: Opens a PR\nTail')
+  expect((await $.tool.call({ tool: 'Skill', skill: 'commit:commit' } as never)).deny).toContain('commit:commit')
+  expect((await $.tool.call({ tool: 'Skill', skill: 'pr:pr' } as never)).deny).toBeUndefined()
+})
+
+test('the pane counts blocked tools, not skills that are off', async ($, on) => {
+  engine(on, [])
+  withSkills(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await settle()
+  await $.command.run(run('off commit'))
+  await $.command.run(run('off Bash'))
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const text = JSON.stringify(await ui.drawn())
+  expect(text).toContain('1 tool blocked')
+  expect(text).not.toContain('2 tools blocked')
+  await ui.unmount()
+})
+
+test('the connector server the mod itself uses can never be blocked', async ($, on) => {
+  const sets: { connector: unknown; enabled: unknown }[] = []
+  engine(on, sets)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await settle()
+  const SET = 'mcp__ccd_connectors__set_session_connector_enabled'
+  const said = (await $.command.run(run('off set_session_connector_enabled'))).text
+  expect(said).toContain("can't be turned off")
+  expect((await $.tool.call({ tool: SET, connector: G, enabled: false } as never)).deny).toBeUndefined()
+  expect(sets).toEqual([{ connector: G, enabled: false }])
+})
+
+test('allowing a tool of an off server turns the server on with only that tool allowed', async ($, on) => {
+  engine(on, [])
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await settle()
+  await $.command.run(run('off get_thread'))
+  await $.command.run(run('off gmail'))
+  await $.command.run(run(''))
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.input({ key: 'q', text: 'thread' } as never)
+  await settle()
+  await ui.press({ key: `tool:mcp__${G}__get_thread` })
+  await settle()
+  expect((await $.tool.call({ tool: `mcp__${G}__get_thread` } as never)).deny).toBeUndefined()
+  expect((await $.tool.call({ tool: `mcp__${G}__send_message` } as never)).deny).toContain('tool-toggle')
+  await ui.unmount()
 })
