@@ -139,7 +139,7 @@ export function fmtWhen(ms: number, now: number): string {
   return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}, ${hhmm}`
 }
 
-export const fmtPct = (n: number) => `${n < 10 && n % 1 !== 0 ? n.toFixed(1) : Math.round(n)}%`
+export const fmtPct = (n: number) => `${n < 10 && !n.toFixed(1).endsWith('.0') ? n.toFixed(1) : Math.round(n)}%`
 
 /** How many of `cells` a percentage fills, and how many stay empty. */
 export function meterCells(pct: number, cells = 10): { filled: number; empty: number } {
@@ -157,4 +157,35 @@ export function meter(pct: number, cells = 6): string {
 export function sortWindows<T extends { kind: string }>(ws: readonly T[]): T[] {
   const rank = (k: string) => (k === 'five_hour' ? 0 : k === 'seven_day' ? 1 : k.startsWith('seven_day_') || k.startsWith('five_hour_') ? 2 : 3)
   return [...ws].sort((a, b) => rank(a.kind) - rank(b.kind) || a.kind.localeCompare(b.kind))
+}
+
+/** One session's reading: when it was taken and the windows it reported. */
+export type Reading = { at: number; list: Window[] }
+
+/** A window's reset in milliseconds; NaN when none is reported. */
+const resetMs = (w: Window): number => (w.resetsAt ? Date.parse(w.resetsAt) : NaN)
+
+/** Whether a value is a window this mod can draw. */
+export const isWindow = (w: unknown): w is Window =>
+  !!w && typeof (w as Window).kind === 'string' && Number.isFinite((w as Window).percentUsed)
+
+/** Whether a window's reset has passed by `now`. */
+export const hasReset = (w: Window, now: number): boolean => resetMs(w) <= now
+
+/**
+ * The freshest window of each kind across readings: the newest reset wins,
+ * then the highest use (usage only climbs within a window). A window whose
+ * reset has passed is left out: its old percentage no longer holds.
+ */
+export function mergeReadings(readings: readonly Reading[], now: number): Window[] {
+  const best = new Map<string, Window>()
+  for (const r of readings) {
+    for (const w of r?.list ?? []) {
+      if (!isWindow(w) || hasReset(w, now)) continue
+      const b = best.get(w.kind)
+      const rank = (x: Window) => (Number.isFinite(resetMs(x)) ? resetMs(x) : -Infinity)
+      if (!b || rank(w) > rank(b) || (rank(w) === rank(b) && w.percentUsed > b.percentUsed)) best.set(w.kind, w)
+    }
+  }
+  return sortWindows([...best.values()])
 }

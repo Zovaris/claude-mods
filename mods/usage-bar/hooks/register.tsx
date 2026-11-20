@@ -2,9 +2,9 @@
  * usage-bar: your plan's usage windows above the prompt, and a pane with the
  * pace and budget for each.
  *
- *   - the windows are what the last API response reported (`five_hour`,
- *     `seven_day`, a model's own week such as Fable's): a session on an API
- *     key reports none, and the band stays away
+ *   - the windows are the freshest reading any open session has stored
+ *     (`five_hour`, `seven_day`, a model's own week such as Fable's): a
+ *     session on an API key reports none, and the band stays away
  *   - each window's start is its reset minus its length; an even pace would
  *     have used the share of time gone, and the budget spreads what is left
  *     over the time that is left
@@ -15,7 +15,8 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { DayMark, Window } from '../types'
 import { chip, slimBar, THEME_TONE } from './slim'
-import { dayOf, fmtLeft, fmtPct, fmtWhen, labelOf, paceOf, paceState, sortWindows, titleOf } from './usage'
+import { dayOf, fmtLeft, fmtPct, fmtWhen, hasReset, isWindow, labelOf, mergeReadings, paceOf, paceState, sortWindows, titleOf } from './usage'
+import type { Reading } from './usage'
 
 const PANE = 'usage-bar'
 const windows = atom({ plugin: 'usage-bar', key: 'windows' } as const, [], { shape: 'windows-1' })
@@ -24,27 +25,45 @@ const marks = atom({ plugin: 'usage-bar', key: 'marks' } as const, {}, { shape: 
 
 let ticker: { cancel: () => void } | undefined
 
+const READING = 'reading:'
+
+/**
+ * Every session stores its own reading under `reading:<session id>`, and every
+ * refresh shows the freshest of all of them: the limits are the account's, so
+ * another session's newer reply counts here too. Readings whose windows have
+ * all reset are pruned.
+ */
 async function refresh($: EngineInterface) {
   const usage = await $.session.usage().catch(() => undefined)
-  const list: Window[] = sortWindows(
+  const own: Window[] = sortWindows(
     (usage?.rateLimits ?? []).map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt })),
   )
   const now = await $.clock.now()
-  if (list.length > 0) {
-    await update($, windows, () => list)
-    await update($, readAt, () => now)
-    await $.store.set('lastWindows', { at: now, list }).catch(() => undefined)
-  } else if ((await read($, windows)).length === 0) {
-    // Nothing reported yet in this run (a fresh load of the plugin, before
-    // the session's next reply): show the last reading while its windows
-    // haven't reset. The limits are the account's, so any session's will do.
-    const kept = (await $.store.get('lastWindows').catch(() => undefined)) as { at: number; list: Window[] } | undefined
-    const live = kept?.list?.filter(w => !w.resetsAt || Date.parse(w.resetsAt) > now) ?? []
-    if (live.length > 0) {
-      await update($, windows, () => live)
-      await update($, readAt, () => kept!.at)
-    }
+  const readings: Reading[] = []
+  if (own.length > 0) {
+    readings.push({ at: now, list: own })
+    const sid = await $.session.id().catch(() => undefined)
+    if (sid) await $.store.set(`${READING}${sid}`, { at: now, list: own }).catch(() => undefined)
   }
+  const keys = await $.store.keys().catch(() => [] as string[])
+  for (const key of keys) {
+    if (!key.startsWith(READING)) continue
+    const got = await $.store.get(key).then(
+      v => ({ ok: true as const, r: v as Reading | undefined }),
+      () => ({ ok: false as const, r: undefined }),
+    )
+    if (!got.ok) continue
+    const r = got.r
+    const live = Array.isArray(r?.list) ? r.list.filter(w => isWindow(w) && !hasReset(w, now)) : []
+    if (live.length === 0) {
+      await $.store.delete(key).catch(() => undefined)
+      continue
+    }
+    readings.push({ at: Number(r!.at) || 0, list: live })
+  }
+  const list = mergeReadings(readings, now)
+  await update($, windows, () => list)
+  await update($, readAt, () => Math.max(0, ...readings.map(r => r.at)))
 
   // The first reading of each window on the local day; a reset since then starts it over.
   const today = dayOf(now)
@@ -111,10 +130,10 @@ export const register: Register = on => {
   // The band: per window, its label, a slim bar with the even-pace mark, the
   // percentage, a state chip and the time to reset.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const list = await read($, windows)
+    const now = await $.clock.now()
+    const list = (await read($, windows)).filter(w => !hasReset(w, now))
     if (e.props.hasSurvey || list.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const now = await $.clock.now()
     return (
       <Box justifyContent="space-between" alignItems="center">
         <Box gap={4} alignItems="center">
@@ -143,9 +162,9 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const list = await read($, windows)
-    const dayMarks = await read($, marks)
     const now = await $.clock.now()
+    const list = (await read($, windows)).filter(w => !hasReset(w, now))
+    const dayMarks = await read($, marks)
     const at = await read($, readAt)
     const cols = e.props.bodyColumns ?? 50
 
