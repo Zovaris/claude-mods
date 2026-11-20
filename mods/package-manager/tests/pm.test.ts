@@ -55,6 +55,11 @@ test('a command with flags it cannot carry over is left alone, not stripped', ()
   expect(rewrite('yarn install --frozen-lockfile', bun).command).toBe('bun install --frozen-lockfile')
 })
 
+test('npm install --frozen-lockfile is not an add of a package called that', () => {
+  const bun = detectIn(files('bun.lock'))!
+  expect(rewrite('npm install --frozen-lockfile', bun).command).toBe('npm install --frozen-lockfile')
+})
+
 test("npx's own -y is dropped, the tool's own is kept", () => {
   const pnpm = detectIn(files('pnpm-lock.yaml'))!
   expect(rewrite('npx -y create-next-app@latest app --yes', pnpm).command).toBe('pnpm dlx create-next-app@latest app --yes')

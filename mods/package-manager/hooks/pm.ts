@@ -112,7 +112,7 @@ export function parse(words: string[]): Op | null {
   if (!tool) return null
   if (words.some(w => GLOBAL.has(w))) return null
   const sub0 = words[1] ?? ''
-  if (['install', 'i', 'add', 'a', 'uninstall', 'remove', 'rm', 'un'].includes(sub0) && hasOtherFlags(words.slice(2).filter(a => !FROZEN.has(a)))) return null
+  if (['install', 'i', 'add', 'a', 'uninstall', 'remove', 'rm', 'un'].includes(sub0) && hasOtherFlags(words.slice(2).filter(a => !(tool !== 'npm' && (sub0 === 'install' || sub0 === 'i') && FROZEN.has(a))))) return null
   if (tool === 'npx' || tool === 'bunx') return words.length > 1 ? { kind: 'dlx', rest: words.slice(1) } : null
   if (tool === 'npm') {
     if (sub === 'ci') return rest.length === 0 ? { kind: 'ci' } : null
