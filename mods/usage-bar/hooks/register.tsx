@@ -48,7 +48,12 @@ async function refresh($: EngineInterface) {
   const keys = await $.store.keys().catch(() => [] as string[])
   for (const key of keys) {
     if (!key.startsWith(READING)) continue
-    const r = (await $.store.get(key).catch(() => undefined)) as Reading | undefined
+    const got = await $.store.get(key).then(
+      v => ({ ok: true as const, r: v as Reading | undefined }),
+      () => ({ ok: false as const, r: undefined }),
+    )
+    if (!got.ok) continue
+    const r = got.r
     const live = Array.isArray(r?.list) ? r.list.filter(w => isWindow(w) && !hasReset(w, now)) : []
     if (live.length === 0) {
       await $.store.delete(key).catch(() => undefined)
