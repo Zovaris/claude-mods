@@ -8,10 +8,10 @@
 export type Lang = 'en' | 'es' | 'pt' | 'fr'
 
 const NAMES: [RegExp, Lang][] = [
-  [/^(es|spa|spanish|espa[ñn]ol|castellano)/i, 'es'],
-  [/^(pt|por|portugu)/i, 'pt'],
-  [/^(fr|fre|fra|french|fran[çc]ais)/i, 'fr'],
-  [/^(en|eng|english)/i, 'en'],
+  [/^(es|spa|spanish|espa[ñn]ol|castellano)(?![\p{L}])/iu, 'es'],
+  [/^(pt|por|portuguese|portugu[êe]s)(?![\p{L}])/iu, 'pt'],
+  [/^(fr|fre|fra|french|fran[çc]ais)(?![\p{L}])/iu, 'fr'],
+  [/^(en|eng|english)(?![\p{L}])/iu, 'en'],
 ]
 
 /** The language a setting such as "spanish", "Español" or "es" names, if we speak it. */

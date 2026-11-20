@@ -235,6 +235,18 @@ async function record($: EngineInterface, sample: Sample) {
   }
 }
 
+/** Drops what this session saved on disk, so a reload does not bring it back. */
+async function forget($: EngineInterface) {
+  try {
+    const sid = await $.session.id()
+    await $.store.delete(`samples:${sid}`)
+    const ids = ((await $.store.get('sessions')) as string[] | undefined) ?? []
+    await $.store.set('sessions', ids.filter(x => x !== sid))
+  } catch {
+    // nothing saved, or no store
+  }
+}
+
 /** Picks up what this session measured before a reload. */
 async function restore($: EngineInterface) {
   if ((await read($, samples)).length > 0) return
@@ -289,14 +301,15 @@ export const register: Register = (on, options) => {
     setting = await readSettingTtl($)
     const language = await $.settings.read({ key: 'language' }).catch(() => undefined)
     settingLang = langOf(typeof language === 'string' ? language : undefined)
-    const kept = await $.store.get('langTally')
+    const stored = (key: string) => $.store.get(key).catch(() => undefined)
+    const kept = await stored('langTally')
     if (kept && typeof kept === 'object') tally = { ...emptyTally(), ...(kept as Partial<Tally>) }
     await refreshAccount($, options.ttl)
-    const stored = await $.store.get('guard')
-    if (typeof stored === 'boolean') await update($, guard, () => stored)
-    const choice = await $.store.get('ttlChoice')
+    const savedGuard = await stored('guard')
+    if (typeof savedGuard === 'boolean') await update($, guard, () => savedGuard)
+    const choice = await stored('ttlChoice')
     if (choice === 'auto' || choice === '5m' || choice === '1h') await update($, ttlChoice, () => choice)
-    const prices = await $.store.get('apiPrices')
+    const prices = await stored('apiPrices')
     if (typeof prices === 'boolean') await update($, apiPrices, () => prices)
     showApi = await read($, apiPrices)
 
@@ -318,6 +331,8 @@ export const register: Register = (on, options) => {
       await update($, samples, () => [])
       await update($, observedTtl, () => null)
       await update($, warmUntil, () => 0)
+      await update($, compactedAt, () => 0)
+      await forget($)
       lastKey = ''
       return next(e)
     }
@@ -354,7 +369,8 @@ export const register: Register = (on, options) => {
       await record($, sample)
       if (options.ttl !== '5m' && options.ttl !== '1h') {
         await refreshAccount($, options.ttl)
-        const prev = before.filter(s => !s.isPing).at(-1)
+        // the newest request that touched the cache, ping or turn: pings keep a 5m cache alive past 5 minutes
+        const prev = before.at(-1)
         const seen = observeTtl(prev, sample, await read($, observedTtl))
         await update($, observedTtl, () => seen)
       }
@@ -411,14 +427,9 @@ export const register: Register = (on, options) => {
       return { text: 'Keep-warm stopped for this session. Everything else stays as it was; just write to carry on.' }
     }
     if (verb === 'warm') {
-      if (arg === 'off') {
-        await update($, warmUntil, () => 0)
-        return { text: 'Keep-warm: off.' }
-      }
       const ms = arg ? parseDuration(arg) : DEFAULT_WARM
       if (!ms) return { text: 'Usage: /cache warm 90m · /cache warm 2h · /cache warm off' }
       await arm($, ms)
-      const { ttl } = await snapshot($)
       return {
         text: `Extending the cache ${fmtClock(Math.min(MAX_WARM, ms))} past its own expiry: a ping just before it runs out, while you are idle. /cache stop ends it.`,
       }
