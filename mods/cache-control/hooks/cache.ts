@@ -150,7 +150,7 @@ export function viewOf(samples: readonly Sample[], ttl: Ttl, now: number, compac
 export function fmtTokens(n: number): string {
   if (n < 1000) return String(n)
   if (n < 100_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
+  if (n < 999_500) return `${Math.round(n / 1000)}k`
   return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
 }
 

@@ -156,10 +156,10 @@ async function ping($: EngineInterface) {
       turnId: 'ping',
       model,
       startedAt,
-      read: u.cache_read_input_tokens,
-      write: u.cache_creation_input_tokens,
-      fresh: u.input_tokens,
-      output: u.output_tokens,
+      read: u.cache_read_input_tokens ?? 0,
+      write: u.cache_creation_input_tokens ?? 0,
+      fresh: u.input_tokens ?? 0,
+      output: u.output_tokens ?? 0,
       isPing: true,
     }
     const { ttl } = await snapshot($)
@@ -235,6 +235,18 @@ async function record($: EngineInterface, sample: Sample) {
   }
 }
 
+/** Drops what this session saved on disk, so a reload does not bring it back. */
+async function forget($: EngineInterface) {
+  try {
+    const sid = await $.session.id()
+    await $.store.delete(`samples:${sid}`)
+    const ids = ((await $.store.get('sessions')) as string[] | undefined) ?? []
+    await $.store.set('sessions', ids.filter(x => x !== sid))
+  } catch {
+    // nothing saved, or no store
+  }
+}
+
 /** Picks up what this session measured before a reload. */
 async function restore($: EngineInterface) {
   if ((await read($, samples)).length > 0) return
@@ -289,14 +301,15 @@ export const register: Register = (on, options) => {
     setting = await readSettingTtl($)
     const language = await $.settings.read({ key: 'language' }).catch(() => undefined)
     settingLang = langOf(typeof language === 'string' ? language : undefined)
-    const kept = await $.store.get('langTally')
+    const stored = (key: string) => $.store.get(key).catch(() => undefined)
+    const kept = await stored('langTally')
     if (kept && typeof kept === 'object') tally = { ...emptyTally(), ...(kept as Partial<Tally>) }
     await refreshAccount($, options.ttl)
-    const stored = await $.store.get('guard')
-    if (typeof stored === 'boolean') await update($, guard, () => stored)
-    const choice = await $.store.get('ttlChoice')
+    const savedGuard = await stored('guard')
+    if (typeof savedGuard === 'boolean') await update($, guard, () => savedGuard)
+    const choice = await stored('ttlChoice')
     if (choice === 'auto' || choice === '5m' || choice === '1h') await update($, ttlChoice, () => choice)
-    const prices = await $.store.get('apiPrices')
+    const prices = await stored('apiPrices')
     if (typeof prices === 'boolean') await update($, apiPrices, () => prices)
     showApi = await read($, apiPrices)
 
@@ -318,6 +331,8 @@ export const register: Register = (on, options) => {
       await update($, samples, () => [])
       await update($, observedTtl, () => null)
       await update($, warmUntil, () => 0)
+      await update($, compactedAt, () => 0)
+      await forget($)
       lastKey = ''
       return next(e)
     }
@@ -345,16 +360,17 @@ export const register: Register = (on, options) => {
         turnId: e.turnId,
         model: r.usage.model || e.model,
         startedAt,
-        read: r.usage.cache_read_input_tokens,
-        write: r.usage.cache_creation_input_tokens,
-        fresh: r.usage.input_tokens,
-        output: r.usage.output_tokens,
+        read: r.usage.cache_read_input_tokens ?? 0,
+        write: r.usage.cache_creation_input_tokens ?? 0,
+        fresh: r.usage.input_tokens ?? 0,
+        output: r.usage.output_tokens ?? 0,
       }
       const before = await read($, samples)
       await record($, sample)
       if (options.ttl !== '5m' && options.ttl !== '1h') {
         await refreshAccount($, options.ttl)
-        const prev = before.filter(s => !s.isPing).at(-1)
+        // the newest request that touched the cache, ping or turn: pings keep a 5m cache alive past 5 minutes
+        const prev = before.at(-1)
         const seen = observeTtl(prev, sample, await read($, observedTtl))
         await update($, observedTtl, () => seen)
       }
@@ -396,12 +412,13 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    isBusy = false
+    if (!e.agentId) isBusy = false
     return next(e)
   })
 
   on('command.run', { command: 'cache' }, async ($, e) => {
-    const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/)
+    const [verb = '', ...rest] = e.args.trim().toLowerCase().split(/\s+/)
+    const arg = rest.join(' ')
     if (verb === '') {
       await $.ui.open({ id: PANE, title: 'Cache' })
       return { text: 'Cache pane opened.' }
@@ -411,14 +428,9 @@ export const register: Register = (on, options) => {
       return { text: 'Keep-warm stopped for this session. Everything else stays as it was; just write to carry on.' }
     }
     if (verb === 'warm') {
-      if (arg === 'off') {
-        await update($, warmUntil, () => 0)
-        return { text: 'Keep-warm: off.' }
-      }
       const ms = arg ? parseDuration(arg) : DEFAULT_WARM
       if (!ms) return { text: 'Usage: /cache warm 90m · /cache warm 2h · /cache warm off' }
       await arm($, ms)
-      const { ttl } = await snapshot($)
       return {
         text: `Extending the cache ${fmtClock(Math.min(MAX_WARM, ms))} past its own expiry: a ping just before it runs out, while you are idle. /cache stop ends it.`,
       }
