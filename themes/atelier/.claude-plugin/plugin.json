@@ -1,7 +1,7 @@
 {
   "name": "atelier",
-  "version": "0.2.1",
-  "description": "Atelier: quiet dot-dither looks on Claude's warm grays, five scenes in four tints, for light and dark",
+  "version": "0.3.0",
+  "description": "Atelier: quiet dot-dither looks on Claude's warm grays, seven scenes in ten tints, for light and dark",
   "license": "MIT",
   "author": {
     "name": "Zovaris"

@@ -1,8 +1,8 @@
 /**
  * atelier: quiet dot-dither looks on Claude's warm grays, for light and dark.
  *
- * Five scenes (Ember, the default, Beam, Dunes, Nebula and Tide) in one of a few tints (Clay, the
- * default, Cobalt, Sage and Ivory); the tint is also the app's accent.
+ * Several scenes (Ember is the default) in one of ten tints (Clay is the
+ * default); the tint is also the app's accent.
  * Desktop and mobile apps draw it; the terminal draws no look. `/atelier`
  * takes a scene, a tint, both, or `off`, and the choice is kept across
  * sessions.
@@ -10,7 +10,7 @@
 import type { EngineInterface, Register, ThemeSetArgs } from 'claude-code'
 
 import { PALETTES } from './palettes'
-import { beamSvg, dunesSvg, emberSvg, nebulaSvg, tideSvg, TINTS } from './scenes'
+import { auroraSvg, beamSvg, dunesSvg, emberSvg, nebulaSvg, orbitSvg, tideSvg, TINTS } from './scenes'
 
 export const SCENES: Record<string, { label: string; blurb: string; alt: string; svg: (tint: string) => string }> = {
   ember: {
@@ -42,6 +42,18 @@ export const SCENES: Record<string, { label: string; blurb: string; alt: string;
     blurb: 'thin swells rolling across the bottom',
     alt: 'Thin lines of dots rolling like swells across the bottom',
     svg: tideSvg,
+  },
+  orbit: {
+    label: 'Orbit',
+    blurb: 'a small ringed planet high on the left',
+    alt: 'A small planet in dots with thin tilted rings',
+    svg: orbitSvg,
+  },
+  aurora: {
+    label: 'Aurora',
+    blurb: 'soft curtains of light hanging from the top',
+    alt: 'Curtains of dotted light swaying down from the top',
+    svg: auroraSvg,
   },
 }
 
@@ -95,7 +107,7 @@ export const register: Register = on => {
     const r = await next(e)
     await $.command.register({
       name: 'atelier',
-      description: 'Pick a look: a scene (ember, beam, dunes, nebula, tide), a tint (clay, cobalt, sage, ivory), or off',
+      description: 'Pick a look: a scene, a tint, or off (no argument lists them)',
       argumentHint: '[scene] [tint] | off',
     })
     const c = await chosen($)

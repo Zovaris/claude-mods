@@ -32,6 +32,36 @@ export const TINTS: Record<string, { label: string; accent: string; ink: Ink }> 
     accent: '#c9b99a',
     ink: { dim: { dark: '#45423b', light: '#d9d4c7' }, lit: { dark: '#b8b2a3', light: '#8a8475' }, hot: { dark: '#f0eee6', light: '#3d3a33' } },
   },
+  rose: {
+    label: 'Rose',
+    accent: '#e58aa0',
+    ink: { dim: { dark: '#5c2f3a', light: '#f1cbd4' }, lit: { dark: '#e58aa0', light: '#cc6680' }, hot: { dark: '#fbd6df', light: '#8c2f48' } },
+  },
+  amber: {
+    label: 'Amber',
+    accent: '#e3a857',
+    ink: { dim: { dark: '#5e4320', light: '#f1d9b4' }, lit: { dark: '#e3a857', light: '#c98a32' }, hot: { dark: '#fbe3bd', light: '#7c5212' } },
+  },
+  teal: {
+    label: 'Teal',
+    accent: '#4fb8b0',
+    ink: { dim: { dark: '#1f4643', light: '#c3e3e0' }, lit: { dark: '#4fb8b0', light: '#2f9890' }, hot: { dark: '#c8f0ec', light: '#155c56' } },
+  },
+  violet: {
+    label: 'Violet',
+    accent: '#a98be8',
+    ink: { dim: { dark: '#3d325e', light: '#dcd1f5' }, lit: { dark: '#a98be8', light: '#8a68d6' }, hot: { dark: '#e5dcff', light: '#4a2f99' } },
+  },
+  crimson: {
+    label: 'Crimson',
+    accent: '#e5533a',
+    ink: { dim: { dark: '#5a2018', light: '#f2c1b6' }, lit: { dark: '#e5533a', light: '#cc3f27' }, hot: { dark: '#ffc4b4', light: '#7f1d0f' } },
+  },
+  slate: {
+    label: 'Slate',
+    accent: '#8fa3b8',
+    ink: { dim: { dark: '#323a44', light: '#d3dae2' }, lit: { dark: '#8fa3b8', light: '#62778d' }, hot: { dark: '#e3ebf3', light: '#2c3a49' } },
+  },
 }
 
 const BG = { dark: ['#1a1918', '#262624'], light: ['#faf9f5', '#f0eee6'] }
@@ -213,5 +243,49 @@ export function tideField(seed = 3) {
 
 export function tideSvg(tint = 'clay', seed = 3): string {
   const { paths } = dots(tideField(seed), TONES)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Orbit: a small planet high on the left, with thin tilted rings of dots around it. */
+export function orbitField(seed = 17) {
+  const n = noise(seed)
+  const c = { x: 560, y: 360, r: 62 }
+  const tilt = -0.32
+  const [ct, st] = [Math.cos(tilt), Math.sin(tilt)]
+  return (x: number, y: number) => {
+    const dx = x - c.x
+    const dy = y - c.y
+    const d = Math.hypot(dx, dy)
+    const disk = d < c.r ? 0.35 + 0.6 * smooth(c.r, -c.r * 0.4, dx + dy * 0.6) : 0
+    const u = dx * ct + dy * st
+    const v = (-dx * st + dy * ct) / 0.28
+    const e = Math.hypot(u, v)
+    const behind = v < 0 && d < c.r * 1.05
+    let ring = 0
+    for (const [rr, a] of [[150, 0.75], [205, 0.45], [320, 0.22]] as const) ring = Math.max(ring, a * Math.exp(-(((e - rr) / 16) ** 2)))
+    const halo = 0.22 * Math.pow(1 - smooth(c.r, 300, d), 2)
+    return clamp(Math.max(disk, behind ? 0 : ring * (0.7 + 0.6 * n(x / 40, y / 40)), halo))
+  }
+}
+
+export function orbitSvg(tint = 'clay', seed = 17): string {
+  const { paths } = dots(orbitField(seed), TONES)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Aurora: tall soft curtains hanging from the top, swaying, fading downward. */
+export function auroraField(seed = 23) {
+  const n = noise(seed)
+  return (x: number, y: number) => {
+    const sway = x + 90 * Math.sin(y / 260 + x / 700) + 40 * Math.sin(y / 90 + 1.3)
+    const folds = Math.pow(0.5 + 0.5 * Math.sin(sway / 46 + 3 * Math.sin(sway / 310)), 3)
+    const band = smooth(0, 160, y) * Math.pow(1 - smooth(120, 640 + 120 * Math.sin(x / 420), y), 1.4)
+    const across = 0.35 + 0.65 * Math.pow(0.5 + 0.5 * Math.sin(x / 520 + 0.8), 1.5)
+    return clamp(folds * band * across * (0.8 + 0.4 * n(sway / 24, y / 300)) * 0.85)
+  }
+}
+
+export function auroraSvg(tint = 'clay', seed = 23): string {
+  const { paths } = dots(auroraField(seed), TONES)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }

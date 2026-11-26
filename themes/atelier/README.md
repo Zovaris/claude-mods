@@ -1,6 +1,6 @@
 # atelier
 
-Quiet dot-dither looks for the Claude desktop and mobile apps, on Claude's own warm grays and ivory. Five scenes, four tints, light and dark. It replaces the old `nebula` and `dunes` themes, which live on here redrawn as dither.
+Quiet dot-dither looks for the Claude desktop and mobile apps, on Claude's own warm grays and ivory. Seven scenes, ten tints, light and dark. It replaces the old `nebula` and `dunes` themes, which live on here redrawn as dither.
 
 ## Install
 
@@ -21,12 +21,14 @@ Or from `/mods`, if you have [mod-manager](../../mods/mod-manager). A theme appl
 - **Dunes**: three ridges of sand lit from a low sun on the right, fading into the dark below.
 - **Nebula**: soft puffs of gas sweeping in from the top-right, torn into wisps at the rim, with sparse stars.
 - **Tide**: a few thin swells rolling across the bottom, brighter as they come near.
+- **Orbit**: a small ringed planet high on the left.
+- **Aurora**: soft curtains of light hanging from the top, swaying and fading downward.
 
 All have faint film grain on top and breathe slowly; motion stops under reduced motion. Light mode prints the same dots on ivory.
 
 ## Tints
 
-The tint colors the dots and is the app's accent too: **clay** (default, `#d97757`), **cobalt**, **sage** and **ivory** (near-monochrome).
+The tint colors the dots and is the app's accent too: **clay** (default, `#d97757`), **cobalt**, **sage**, **ivory** (near-monochrome), **rose**, **amber**, **teal**, **violet**, **crimson** and **slate**.
 
 ## Commands
 
