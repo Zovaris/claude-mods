@@ -92,7 +92,7 @@ export const register: Register = on => {
       .register({ name: 'limits', description: 'Plan usage limits: each window, its pace and a daily budget' })
       .catch(err => $.ui.log(`usage-bar: /limits not registered: ${String(err)}`, { to: 'debug' }))
     ticker?.cancel()
-    ticker = $.clock.every(60_000, () => void refresh($))
+    ticker = $.clock.every(30_000, () => void refresh($))
     void refresh($)
     return r
   })
