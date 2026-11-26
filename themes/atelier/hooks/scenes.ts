@@ -8,7 +8,7 @@
  * the left edge that thins to a spark. Film grain sits on top, and the light
  * breathes slowly unless motion is reduced.
  */
-import { clamp, dots, GRAIN, H, type Ink, inkCss, noise, smooth, type Tone, W } from './dither'
+import { clamp, dots, rng, GRAIN, H, type Ink, inkCss, noise, smooth, type Tone, W } from './dither'
 
 /** Each tint's three inks, faint to bright, for dark and light mode. */
 export const TINTS: Record<string, { label: string; accent: string; ink: Ink }> = {
@@ -107,7 +107,14 @@ export function beamSvg(tint = 'clay', seed = 13): string {
 /** Fractal noise from a few octaves of value noise, about [0, 1]. */
 function fbm(seed: number) {
   const n = noise(seed)
-  return (x: number, y: number) => (n(x, y) * 0.55 + n(x * 2.1, y * 2.1) * 0.3 + n(x * 4.3, y * 4.3) * 0.15)
+  // each octave turned a different way, so the value-noise grid never lines up into squares
+  const rot = [0.5, 1.7, 2.6, 4.1].map(a => [Math.cos(a), Math.sin(a)] as const)
+  const amp = [0.5, 0.27, 0.15, 0.08]
+  return (x: number, y: number) =>
+    rot.reduce((v, [c, s], i) => {
+      const k = 2.03 ** i
+      return v + amp[i]! * n((x * c - y * s) * k + i * 17.3, (x * s + y * c) * k + i * 5.1)
+    }, 0)
 }
 
 /** A star at about one cell in this many, the same every time. */
@@ -155,19 +162,31 @@ export function dunesSvg(tint = 'clay', seed = 5): string {
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
-/** Nebula: a band of torn gas sweeping in from the top-right, with sparse stars. */
+/**
+ * Nebula: a band of soft puffs of gas sweeping in from the top-right, with
+ * sparse stars. Gaussian puffs, not grid noise, so no edge ever squares off;
+ * a slow sine ripple tears the rim into wisps.
+ */
 export function nebulaField(seed = 11) {
-  const f = fbm(seed)
-  const g = fbm(seed + 1)
+  const rand = rng(seed)
+  const puffs = Array.from({ length: 34 }, () => {
+    const t = rand()
+    const x = W * (1.05 - 0.95 * t) + (rand() - 0.5) * 220
+    const y = H * (0.02 + 0.7 * t) + (rand() - 0.5) * 200
+    const r = 60 + 150 * rand() * (1.1 - t * 0.6)
+    return { x, y, r2: r * r, a: (0.25 + 0.5 * rand()) * (1 - t * 0.55) }
+  })
   const star = stars(seed, 900)
   return (x: number, y: number) => {
-    const wx = x + 160 * (g(x / 380, y / 380) - 0.5)
-    const wy = y + 160 * (g(x / 380 + 9, y / 380) - 0.5)
-    const line = Math.abs(0.42 * wx + wy - 0.95 * H) / Math.hypot(0.42, 1)
-    const band = Math.exp(-((line / 170) ** 2)) * smooth(0, 1100, wx) * 0.95
-    const gas = band * Math.pow(f(wx / 260, wy / 260), 1.6) * 1.9
+    let gas = 0
+    for (const p of puffs) {
+      const d2 = (x - p.x) ** 2 + (y - p.y) ** 2
+      if (d2 < p.r2 * 9) gas += p.a * Math.exp(-d2 / (2 * p.r2))
+    }
+    const tear = 0.82 + 0.18 * Math.sin(x / 53 + 2 * Math.sin(y / 97)) * Math.sin(y / 41 + 1.3 * Math.sin(x / 113))
+    const v = Math.pow(smooth(0.2, 1.7, gas * tear), 1.6) * 0.66
     const s = star(Math.round(x), Math.round(y)) ? 0.92 : 0
-    return clamp(Math.max(gas, s))
+    return clamp(Math.max(v, s))
   }
 }
 

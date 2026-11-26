@@ -19,7 +19,7 @@ Or from `/mods`, if you have [mod-manager](../../mods/mod-manager). A theme appl
 - **Ember** (default): a low sun rising out of the bottom-right corner, printed as an ordered dither of square dots, with a thin rim of horizon. The rest of the frame stays empty.
 - **Beam**: one streak of light crossing from the left edge that thins to a line and ends in a spark.
 - **Dunes**: three ridges of sand lit from a low sun on the right, fading into the dark below.
-- **Nebula**: a torn band of gas sweeping in from the top-right, with sparse stars.
+- **Nebula**: soft puffs of gas sweeping in from the top-right, torn into wisps at the rim, with sparse stars.
 - **Tide**: a few thin swells rolling across the bottom, brighter as they come near.
 
 All have faint film grain on top and breathe slowly; motion stops under reduced motion. Light mode prints the same dots on ivory.
