@@ -1,7 +1,7 @@
 /**
  * atelier: quiet dot-dither looks on Claude's warm grays, for light and dark.
  *
- * Two scenes (Ember, the default, and Beam) in one of a few tints (Clay, the
+ * Five scenes (Ember, the default, Beam, Dunes, Nebula and Tide) in one of a few tints (Clay, the
  * default, Cobalt, Sage and Ivory); the tint is also the app's accent.
  * Desktop and mobile apps draw it; the terminal draws no look. `/atelier`
  * takes a scene, a tint, both, or `off`, and the choice is kept across
@@ -10,7 +10,7 @@
 import type { EngineInterface, Register, ThemeSetArgs } from 'claude-code'
 
 import { PALETTES } from './palettes'
-import { beamSvg, emberSvg, TINTS } from './scenes'
+import { beamSvg, dunesSvg, emberSvg, nebulaSvg, tideSvg, TINTS } from './scenes'
 
 export const SCENES: Record<string, { label: string; blurb: string; alt: string; svg: (tint: string) => string }> = {
   ember: {
@@ -24,6 +24,24 @@ export const SCENES: Record<string, { label: string; blurb: string; alt: string;
     blurb: 'one dithered streak of light ending in a spark',
     alt: 'A streak of dots crossing from the left and ending in a spark',
     svg: beamSvg,
+  },
+  dunes: {
+    label: 'Dunes',
+    blurb: 'three ridges of sand under a low sun',
+    alt: 'Three ridges of sand in dots under a low sun',
+    svg: dunesSvg,
+  },
+  nebula: {
+    label: 'Nebula',
+    blurb: 'a torn band of gas with sparse stars',
+    alt: 'A band of gas in dots sweeping across the sky, with stars',
+    svg: nebulaSvg,
+  },
+  tide: {
+    label: 'Tide',
+    blurb: 'thin swells rolling across the bottom',
+    alt: 'Thin lines of dots rolling like swells across the bottom',
+    svg: tideSvg,
   },
 }
 
@@ -77,7 +95,7 @@ export const register: Register = on => {
     const r = await next(e)
     await $.command.register({
       name: 'atelier',
-      description: 'Pick a look: a scene (ember, beam), a tint (clay, cobalt, sage, ivory), or off',
+      description: 'Pick a look: a scene (ember, beam, dunes, nebula, tide), a tint (clay, cobalt, sage, ivory), or off',
       argumentHint: '[scene] [tint] | off',
     })
     const c = await chosen($)

@@ -61,14 +61,14 @@ function frame(body: string, breathe: string, ink: Ink): string {
   )
 }
 
-export const EMBER = { cx: 1580, cy: 1200, r: 1120, rim: 700 }
+export const EMBER = { cx: 1640, cy: 1260, r: 900, rim: 700 }
 
 /** Light of the Ember scene at a point. */
 export function emberField(seed = 7) {
   const n = noise(seed)
   return (x: number, y: number) => {
     const d = Math.hypot(x - EMBER.cx, y - EMBER.cy)
-    const glow = Math.pow(1 - smooth(0, EMBER.r, d), 1.25)
+    const glow = 0.78 * Math.pow(1 - smooth(0, EMBER.r, d), 1.9)
     const grain = 0.7 + 0.6 * n(x / 55, y / 55)
     const rim = Math.exp(-(((d - EMBER.rim) / 7) ** 2)) * smooth(EMBER.cy, EMBER.cy - EMBER.rim * 0.9, y)
     return clamp(Math.max(glow * grain, rim * 0.95))
@@ -101,5 +101,98 @@ export function beamField(seed = 13) {
 
 export function beamSvg(tint = 'clay', seed = 13): string {
   const { paths } = dots(beamField(seed), TONES)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Fractal noise from a few octaves of value noise, about [0, 1]. */
+function fbm(seed: number) {
+  const n = noise(seed)
+  return (x: number, y: number) => (n(x, y) * 0.55 + n(x * 2.1, y * 2.1) * 0.3 + n(x * 4.3, y * 4.3) * 0.15)
+}
+
+/** A star at about one cell in this many, the same every time. */
+function stars(seed: number, every: number) {
+  return (x: number, y: number) => {
+    let h = Math.imul((x * 73856093) ^ (y * 19349663) ^ seed, 0x9e3779b1) >>> 0
+    h ^= h >>> 15
+    return h % every === 0
+  }
+}
+
+/** Dunes: three ridges of sand, lit from a low sun on the right, fading into the dark below. */
+export const DUNES = { sun: { x: 1480, y: 600, r: 64 } }
+
+export function dunesField(seed = 5) {
+  const n = noise(seed)
+  const ranges = [
+    { base: 690, amp: 70, len: 760, ph: 0.2, lit: 0.42 },
+    { base: 800, amp: 95, len: 980, ph: 0.65, lit: 0.6 },
+    { base: 930, amp: 120, len: 1260, ph: 0.35, lit: 0.8 },
+  ]
+  const profile = (p: number) => {
+    const f = p - Math.floor(p)
+    return f < 0.74 ? (Math.sin((f / 0.74 - 0.5) * Math.PI) + 1) / 2 : (Math.cos(((f - 0.74) / 0.26) * Math.PI) + 1) / 2
+  }
+  return (x: number, y: number) => {
+    const s = DUNES.sun
+    const ds = Math.hypot(x - s.x, y - s.y)
+    let v = ds < s.r ? 0.95 : 0.3 * Math.pow(1 - smooth(s.r, 520, ds), 2)
+    for (const r of ranges) {
+      const ridge = r.base - r.amp * profile(x / r.len + r.ph) - 18 * Math.sin(x / 300 + r.base)
+      const ahead = r.base - r.amp * profile((x + 6) / r.len + r.ph) - 18 * Math.sin((x + 6) / 300 + r.base)
+      if (y < ridge) continue
+      const facing = ahead < ridge ? 1 : 0.28
+      const depth = y - ridge
+      const crest = Math.exp(-((depth / 5) ** 2))
+      v = Math.max(0, r.lit * (facing * Math.exp(-depth / 120) * (0.7 + 0.6 * n(x / 40, y / 12)) + crest * 0.5))
+    }
+    return clamp(v)
+  }
+}
+
+export function dunesSvg(tint = 'clay', seed = 5): string {
+  const { paths } = dots(dunesField(seed), TONES)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Nebula: a band of torn gas sweeping in from the top-right, with sparse stars. */
+export function nebulaField(seed = 11) {
+  const f = fbm(seed)
+  const g = fbm(seed + 1)
+  const star = stars(seed, 900)
+  return (x: number, y: number) => {
+    const wx = x + 160 * (g(x / 380, y / 380) - 0.5)
+    const wy = y + 160 * (g(x / 380 + 9, y / 380) - 0.5)
+    const line = Math.abs(0.42 * wx + wy - 0.95 * H) / Math.hypot(0.42, 1)
+    const band = Math.exp(-((line / 170) ** 2)) * smooth(0, 1100, wx) * 0.95
+    const gas = band * Math.pow(f(wx / 260, wy / 260), 1.6) * 1.9
+    const s = star(Math.round(x), Math.round(y)) ? 0.92 : 0
+    return clamp(Math.max(gas, s))
+  }
+}
+
+export function nebulaSvg(tint = 'clay', seed = 11): string {
+  const { paths } = dots(nebulaField(seed), TONES)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Tide: a few thin swells rolling across the bottom, brighter as they come near. */
+export function tideField(seed = 3) {
+  const n = noise(seed)
+  return (x: number, y: number) => {
+    let v = 0
+    for (let k = 0; k < 6; k++) {
+      const base = 790 + k * 50 + k * k * 4
+      const wave = base + (10 + 4 * k) * Math.sin(x / (230 - k * 18) + k * 1.7) + 8 * Math.sin(x / 71 + k)
+      const width = 2.5 + k * 0.9
+      const strength = 0.28 + k * 0.12
+      v = Math.max(v, Math.exp(-(((y - wave) / width) ** 2)) * strength * (0.6 + 0.8 * n(x / 90 + k * 7, k)))
+    }
+    return clamp(v)
+  }
+}
+
+export function tideSvg(tint = 'clay', seed = 3): string {
+  const { paths } = dots(tideField(seed), TONES)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
