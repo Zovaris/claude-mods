@@ -72,6 +72,9 @@ const TONES: Tone[] = [
   { cls: 'hot', from: 0.86 },
 ]
 
+/** A field moved right by dx, to keep its subject off the chat column in the middle. */
+const shift = (f: (x: number, y: number) => number, dx: number) => (x: number, y: number) => f(x - dx, y)
+
 /** The dots don't depend on the tint, so each scene is dithered once and recolored after. */
 const memo = new Map<string, string>()
 function cached(key: string, make: () => string): string {
@@ -368,7 +371,7 @@ export function castleField(seed = 29) {
 }
 
 export function castleSvg(tint = 'clay', seed = 29): string {
-  const paths = cached(`castle:${seed}`, () => dots(castleField(seed), TONES).paths)
+  const paths = cached(`castle:${seed}`, () => dots(shift(castleField(seed), 340), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -409,18 +412,18 @@ export function warriorField(seed = 31) {
 }
 
 export function warriorSvg(tint = 'crimson', seed = 31): string {
-  const paths = cached(`warrior:${seed}`, () => dots(warriorField(seed), TONES).paths)
+  const paths = cached(`warrior:${seed}`, () => dots(shift(warriorField(seed), 280), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
 /** Boulevard: a striped sun setting behind a city skyline, palms along the shore. */
 export function boulevardField(seed = 37) {
   const rand = rng(seed)
-  const sun = { x: 960, y: 620, r: 270 }
+  const sun = { x: 1470, y: 620, r: 260 }
   const blocks: { x0: number; x1: number; top: number }[] = []
   for (let x = 120; x < 1820; ) {
     const w = 40 + rand() * 90
-    const tall = Math.exp(-(((x - 960) / 520) ** 2))
+    const tall = Math.exp(-(((x - 1470) / 480) ** 2))
     blocks.push({ x0: x, x1: x + w, top: 760 - (60 + rand() * 150) * (0.5 + tall) })
     x += w + rand() * 8
   }
