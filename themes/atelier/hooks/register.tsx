@@ -10,7 +10,7 @@
 import type { EngineInterface, Register, ThemeSetArgs } from 'claude-code'
 
 import { PALETTES } from './palettes'
-import { auroraSvg, beamSvg, dunesSvg, emberSvg, nebulaSvg, orbitSvg, tideSvg, TINTS } from './scenes'
+import { auroraSvg, beamSvg, boulevardSvg, castleSvg, dunesSvg, emberSvg, nebulaSvg, orbitSvg, tideSvg, TINTS, warriorSvg } from './scenes'
 
 export const SCENES: Record<string, { label: string; blurb: string; alt: string; svg: (tint: string) => string }> = {
   ember: {
@@ -54,6 +54,24 @@ export const SCENES: Record<string, { label: string; blurb: string; alt: string;
     blurb: 'soft curtains of light hanging from the top',
     alt: 'Curtains of dotted light swaying down from the top',
     svg: auroraSvg,
+  },
+  castle: {
+    label: 'Castle',
+    blurb: 'a dark keep on a crag under a huge moon',
+    alt: 'A castle silhouette with spired towers against a dotted moon',
+    svg: castleSvg,
+  },
+  warrior: {
+    label: 'Warrior',
+    blurb: 'a horned warrior with a planted greatsword before a low sun',
+    alt: 'A warrior silhouette with a torn cape and a sword against a dotted sun',
+    svg: warriorSvg,
+  },
+  boulevard: {
+    label: 'Boulevard',
+    blurb: 'a striped sun setting behind a city, palms on the shore',
+    alt: 'A city skyline and palms against a striped setting sun, in dots',
+    svg: boulevardSvg,
   },
 }
 

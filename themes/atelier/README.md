@@ -1,6 +1,6 @@
 # atelier
 
-Quiet dot-dither looks for the Claude desktop and mobile apps, on Claude's own warm grays and ivory. Seven scenes, ten tints, light and dark. It replaces the old `nebula` and `dunes` themes, which live on here redrawn as dither.
+Quiet dot-dither looks for the Claude desktop and mobile apps, on Claude's own warm grays and ivory. Ten scenes, ten tints, light and dark. It replaces the old `nebula` and `dunes` themes, which live on here redrawn as dither.
 
 ## Install
 
@@ -23,6 +23,11 @@ Or from `/mods`, if you have [mod-manager](../../mods/mod-manager). A theme appl
 - **Tide**: a few thin swells rolling across the bottom, brighter as they come near.
 - **Orbit**: a small ringed planet high on the left.
 - **Aurora**: soft curtains of light hanging from the top, swaying and fading downward.
+- **Castle**: a dark keep with spired towers on a crag, under a huge low moon, two windows lit.
+- **Warrior**: a horned warrior with a torn cape and a planted greatsword, backlit by a low sun.
+- **Boulevard**: a striped sun setting behind a city skyline, with palms along the shore.
+
+Castle, Warrior and Boulevard are silhouettes: the figure is the dark left empty in front of the light.
 
 All have faint film grain on top and breathe slowly; motion stops under reduced motion. Light mode prints the same dots on ivory.
 

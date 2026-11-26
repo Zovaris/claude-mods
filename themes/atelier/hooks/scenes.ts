@@ -72,6 +72,14 @@ const TONES: Tone[] = [
   { cls: 'hot', from: 0.86 },
 ]
 
+/** The dots don't depend on the tint, so each scene is dithered once and recolored after. */
+const memo = new Map<string, string>()
+function cached(key: string, make: () => string): string {
+  let v = memo.get(key)
+  if (v === undefined) memo.set(key, (v = make()))
+  return v
+}
+
 function frame(body: string, breathe: string, ink: Ink): string {
   const style =
     inkCss(ink, 'dark') +
@@ -106,7 +114,7 @@ export function emberField(seed = 7) {
 }
 
 export function emberSvg(tint = 'clay', seed = 7): string {
-  const { paths } = dots(emberField(seed), TONES)
+  const paths = cached(`ember:${seed}`, () => dots(emberField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -130,7 +138,7 @@ export function beamField(seed = 13) {
 }
 
 export function beamSvg(tint = 'clay', seed = 13): string {
-  const { paths } = dots(beamField(seed), TONES)
+  const paths = cached(`beam:${seed}`, () => dots(beamField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -188,7 +196,7 @@ export function dunesField(seed = 5) {
 }
 
 export function dunesSvg(tint = 'clay', seed = 5): string {
-  const { paths } = dots(dunesField(seed), TONES)
+  const paths = cached(`dunes:${seed}`, () => dots(dunesField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -221,7 +229,7 @@ export function nebulaField(seed = 11) {
 }
 
 export function nebulaSvg(tint = 'clay', seed = 11): string {
-  const { paths } = dots(nebulaField(seed), TONES)
+  const paths = cached(`nebula:${seed}`, () => dots(nebulaField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -242,7 +250,7 @@ export function tideField(seed = 3) {
 }
 
 export function tideSvg(tint = 'clay', seed = 3): string {
-  const { paths } = dots(tideField(seed), TONES)
+  const paths = cached(`tide:${seed}`, () => dots(tideField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -269,7 +277,7 @@ export function orbitField(seed = 17) {
 }
 
 export function orbitSvg(tint = 'clay', seed = 17): string {
-  const { paths } = dots(orbitField(seed), TONES)
+  const paths = cached(`orbit:${seed}`, () => dots(orbitField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }
 
@@ -286,6 +294,170 @@ export function auroraField(seed = 23) {
 }
 
 export function auroraSvg(tint = 'clay', seed = 23): string {
-  const { paths } = dots(auroraField(seed), TONES)
+  const paths = cached(`aurora:${seed}`, () => dots(auroraField(seed), TONES).paths)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+// ---- silhouettes ---------------------------------------------------------
+// These scenes are backlit: the light is dithered, and the figure in front of
+// it is the dark left empty, with a thin rim where it meets the light.
+
+type Pt = readonly [number, number]
+
+function inPoly(poly: readonly Pt[], x: number, y: number): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!
+    const [xj, yj] = poly[j]!
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+function segDist(x: number, y: number, a: Pt, b: Pt): number {
+  const [ax, ay] = a
+  const [bx, by] = b
+  const t = clamp(((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2))
+  return Math.hypot(x - ax - t * (bx - ax), y - ay - t * (by - ay))
+}
+
+/** The light behind a silhouette, minus the silhouette, plus a rim and any lit marks. */
+function backlit(light: (x: number, y: number) => number, solid: (x: number, y: number) => boolean, lit: (x: number, y: number) => number = () => 0) {
+  return (x: number, y: number) => {
+    if (solid(x, y)) {
+      const near = !solid(x, y - 4) && !solid(x, y - 8)
+      return clamp(Math.max(lit(x, y), near ? light(x, y) * 0.55 : 0))
+    }
+    return light(x, y)
+  }
+}
+
+/** Castle: a keep with towers on a crag, under a huge low moon, two windows lit. */
+export function castleField(seed = 29) {
+  const n = noise(seed)
+  const star = stars(seed, 1400)
+  const moon = { x: 1220, y: 430, r: 230 }
+  const towers: { x: number; w: number; top: number; roof: number }[] = [
+    { x: 1010, w: 70, top: 520, roof: 120 },
+    { x: 1130, w: 95, top: 380, roof: 170 },
+    { x: 1280, w: 60, top: 560, roof: 95 },
+    { x: 1390, w: 80, top: 470, roof: 130 },
+  ]
+  const crag = (x: number) => 780 - 140 * Math.exp(-(((x - 1220) / 330) ** 2)) + 22 * Math.sin(x / 47) + 14 * Math.sin(x / 13)
+  const solid = (x: number, y: number) => {
+    if (y > crag(x)) return true
+    if (x > 980 && x < 1480 && y > 640 && !(y < 652 && Math.floor(x / 18) % 2 === 0)) return true
+    for (const t of towers) {
+      const half = t.w / 2
+      if (Math.abs(x - t.x) < half && y > t.top) return true
+      const rise = (y - (t.top - t.roof)) / t.roof
+      if (rise > 0 && rise <= 1 && Math.abs(x - t.x) < (half + 8) * rise) return true
+    }
+    return false
+  }
+  const windows = (x: number, y: number) =>
+    (Math.abs(x - 1130) < 7 && Math.abs(y - 450) < 12) || (Math.abs(x - 1390) < 6 && Math.abs(y - 540) < 10) ? 0.95 : 0
+  const light = (x: number, y: number) => {
+    const d = Math.hypot(x - moon.x, y - moon.y)
+    const disk = d < moon.r ? 0.62 + 0.25 * n(x / 60, y / 60) : 0
+    const glow = 0.5 * Math.pow(1 - smooth(moon.r, moon.r * 3.2, d), 1.8)
+    const mist = 0.3 * Math.exp(-(((y - 800) / 60) ** 2)) * (0.6 + 0.8 * n(x / 120, y / 40))
+    return clamp(Math.max(disk, glow, mist, star(Math.round(x), Math.round(y)) ? 0.9 : 0))
+  }
+  return backlit(light, solid, windows)
+}
+
+export function castleSvg(tint = 'clay', seed = 29): string {
+  const paths = cached(`castle:${seed}`, () => dots(castleField(seed), TONES).paths)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Warrior: a lone figure with a planted greatsword and a torn cape, on a ridge before a red sun. */
+export function warriorField(seed = 31) {
+  const n = noise(seed)
+  const sun = { x: 1340, y: 560, r: 300 }
+  const body: [Pt, Pt, number][] = [
+    [[1340, 470], [1340, 470], 26], // head
+    [[1340, 505], [1336, 640], 40], // torso
+    [[1300, 520], [1380, 520], 30], // shoulders
+    [[1328, 640], [1312, 800], 20], // left leg
+    [[1350, 640], [1372, 800], 20], // right leg
+    [[1310, 540], [1395, 610], 13], // arm to the hilt
+    [[1395, 560], [1398, 600], 12],
+  ]
+  const cape: Pt[] = [[1300, 505], [1380, 505], [1300, 650], [1255, 790], [1230, 760], [1210, 800], [1185, 770]]
+  const sword = { top: [1398, 540] as Pt, tip: [1404, 830] as Pt }
+  const ridge = (x: number) => 815 + 30 * Math.sin(x / 260) + 10 * Math.sin(x / 37)
+  const solid = (x: number, y: number) => {
+    if (y > ridge(x)) return true
+    if (body.some(([a, b, r]) => segDist(x, y, a, b) < r)) return true
+    if (inPoly(cape, x, y) && n(x / 14, y / 14) > 0.25) return true
+    if (segDist(x, y, sword.top, sword.tip) < 6) return true
+    if (Math.abs(y - 560) < 5 && Math.abs(x - 1398) < 34) return true
+    // horns on the helm
+    if (segDist(x, y, [1322, 458], [1300, 418]) < 6 || segDist(x, y, [1358, 458], [1380, 418]) < 6) return true
+    return false
+  }
+  const light = (x: number, y: number) => {
+    const d = Math.hypot(x - sun.x, y - sun.y)
+    const disk = d < sun.r ? 0.55 + 0.2 * Math.pow(1 - d / sun.r, 0.6) : 0
+    const glow = 0.48 * Math.pow(1 - smooth(sun.r, sun.r * 2.6, d), 2)
+    const ash = n(x / 7, y / 7) > 0.985 && d < sun.r * 2.2 ? 0.7 : 0
+    return clamp(Math.max(disk, glow, ash))
+  }
+  return backlit(light, solid)
+}
+
+export function warriorSvg(tint = 'crimson', seed = 31): string {
+  const paths = cached(`warrior:${seed}`, () => dots(warriorField(seed), TONES).paths)
+  return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
+}
+
+/** Boulevard: a striped sun setting behind a city skyline, palms along the shore. */
+export function boulevardField(seed = 37) {
+  const rand = rng(seed)
+  const sun = { x: 960, y: 620, r: 270 }
+  const blocks: { x0: number; x1: number; top: number }[] = []
+  for (let x = 120; x < 1820; ) {
+    const w = 40 + rand() * 90
+    const tall = Math.exp(-(((x - 960) / 520) ** 2))
+    blocks.push({ x0: x, x1: x + w, top: 760 - (60 + rand() * 150) * (0.5 + tall) })
+    x += w + rand() * 8
+  }
+  const shore = 790
+  const palms: { x: number; h: number; lean: number }[] = [
+    { x: 260, h: 360, lean: 60 },
+    { x: 380, h: 300, lean: -40 },
+    { x: 1560, h: 380, lean: -70 },
+    { x: 1700, h: 310, lean: 45 },
+  ]
+  const palm = (x: number, y: number) =>
+    palms.some(p => {
+      const top: Pt = [p.x + p.lean, shore - p.h]
+      if (segDist(x, y, [p.x, shore], top) < 7) return true
+      for (let k = 0; k < 7; k++) {
+        const a = -Math.PI + (k / 6) * Math.PI
+        const tip: Pt = [top[0] + Math.cos(a) * 130, top[1] + Math.sin(a) * 34 + 50]
+        const mid: Pt = [top[0] + Math.cos(a) * 70, top[1] + Math.sin(a) * 40]
+        if (segDist(x, y, top, mid) < 5 || segDist(x, y, mid, tip) < 4) return true
+      }
+      return false
+    })
+  const solid = (x: number, y: number) =>
+    (y > shore && y < shore + 14) || blocks.some(b => x >= b.x0 && x < b.x1 && y > b.top && y <= shore) || palm(x, y)
+  const light = (x: number, y: number) => {
+    const d = Math.hypot(x - sun.x, y - sun.y)
+    const stripe = y > sun.y - 40 && Math.floor((y - sun.y + 40) / 22) % 2 === 1
+    const disk = d < sun.r && !stripe ? 0.5 + 0.4 * smooth(sun.y + sun.r, sun.y - sun.r, y) : 0
+    const glow = 0.42 * Math.pow(1 - smooth(sun.r, sun.r * 2.7, d), 2)
+    const dusk = y < shore ? 0.56 * Math.exp(-(((y - shore + 150) / 260) ** 2)) * (0.55 + 0.45 * Math.exp(-(((x - sun.x) / 900) ** 2))) : 0
+    const water = y > shore + 14 ? 0.55 * Math.exp(-(((x - sun.x) / 200) ** 2)) * (Math.floor(y / 9) % 3 === 0 ? 1 : 0.2) * Math.exp(-(y - shore) / 180) : 0
+    return clamp(Math.max(disk, glow, dusk, water))
+  }
+  return backlit(light, solid)
+}
+
+export function boulevardSvg(tint = 'rose', seed = 37): string {
+  const paths = cached(`boulevard:${seed}`, () => dots(boulevardField(seed), TONES).paths)
   return frame(`<g class="light">${paths}</g>`, '.light', TINTS[tint]!.ink)
 }

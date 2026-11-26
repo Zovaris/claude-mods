@@ -17,7 +17,7 @@ Mods and themes for [Claude Code](https://code.claude.com). Mods add features to
 
 | | Look | Command |
 | --- | --- | --- |
-| [atelier](themes/atelier) | Seven quiet dot-dither scenes on Claude's warm grays, in ten tints | `/atelier` |
+| [atelier](themes/atelier) | Ten quiet dot-dither scenes on Claude's warm grays, in ten tints | `/atelier` |
 
 Each folder has its own README with everything it does, its commands and options.
 

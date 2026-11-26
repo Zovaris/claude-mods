@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { PALETTES } from '../hooks/palettes'
 import { SCENES } from '../hooks/register'
-import { auroraField, beamField, dunesField, emberField, nebulaField, orbitField, tideField, TINTS } from '../hooks/scenes'
+import { auroraField, beamField, boulevardField, castleField, dunesField, emberField, nebulaField, orbitField, tideField, TINTS, warriorField } from '../hooks/scenes'
 
 test('every scene in every tint is seeded, well-formed and under the size limit', () => {
   for (const [name, scene] of Object.entries(SCENES)) {
@@ -21,7 +21,7 @@ test('every tint makes a palette Desktop paints', () => {
 })
 
 test('the scenes keep most of the frame empty', () => {
-  for (const field of [emberField(), beamField(), dunesField(), nebulaField(), tideField(), orbitField(), auroraField()]) {
+  for (const field of [emberField(), beamField(), dunesField(), nebulaField(), tideField(), orbitField(), auroraField(), castleField(), warriorField(), boulevardField()]) {
     let lit = 0
     let all = 0
     for (let y = 0; y < 1080; y += 24) for (let x = 0; x < 1920; x += 24, all++) if (field(x, y) > 0.25) lit++
