@@ -32,13 +32,13 @@ jobs:
           claude --version
           claude plugin test --help
 
-      - name: Validate and test every mod
+      - name: Validate and test every mod and theme
         run: |
           set -u
           shopt -s nullglob
-          mods=(mods/*/)
+          mods=(mods/*/ themes/*/)
           if [ "${#mods[@]}" -eq 0 ]; then
-            echo "::error::no mods found under mods/"
+            echo "::error::no mods or themes found"
             exit 1
           fi
           failed=()
