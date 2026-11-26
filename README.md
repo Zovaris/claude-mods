@@ -17,8 +17,7 @@ Mods and themes for [Claude Code](https://code.claude.com). Mods add features to
 
 | | Look | Command |
 | --- | --- | --- |
-| [nebula](themes/nebula) | A violet and rose nebula, light and dark | `/nebula` |
-| [dunes](themes/dunes) | A red desert drawn in ASCII, dusk and noon | `/dunes` |
+| [atelier](themes/atelier) | Quiet dot-dither scenes on Claude's warm grays, in four tints | `/atelier` |
 
 Each folder has its own README with everything it does, its commands and options.
 

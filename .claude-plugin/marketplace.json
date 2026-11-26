@@ -77,26 +77,15 @@
       ]
     },
     {
-      "name": "nebula",
-      "source": "./themes/nebula",
-      "description": "A space look for light and dark, with a violet and rose nebula",
+      "name": "atelier",
+      "source": "./themes/atelier",
+      "description": "Quiet dot-dither looks on Claude's warm grays: two scenes in four tints, light and dark",
       "category": "theme",
       "keywords": [
         "theme",
         "look",
-        "space"
-      ]
-    },
-    {
-      "name": "dunes",
-      "source": "./themes/dunes",
-      "description": "A red desert drawn in ASCII, dusk in dark mode and noon in light",
-      "category": "theme",
-      "keywords": [
-        "theme",
-        "look",
-        "desert",
-        "ascii"
+        "dither",
+        "minimal"
       ]
     }
   ]
