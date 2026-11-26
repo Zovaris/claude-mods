@@ -1,0 +1,11 @@
+{
+  "name": "atelier",
+  "version": "0.5.0",
+  "description": "Atelier: quiet dot-dither looks on Claude's warm grays, ten scenes in ten tints, for light and dark",
+  "license": "MIT",
+  "author": {
+    "name": "Zovaris"
+  },
+  "homepage": "https://github.com/Zovaris/claude-mods/tree/main/themes/atelier",
+  "repository": "https://github.com/Zovaris/claude-mods"
+}
